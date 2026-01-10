@@ -4,6 +4,7 @@ let sessionGoal = '';
 let sessionDuration = 25;
 let timeRemaining = 0;
 let timerInterval = null;
+let debugPoll = null;
 
 // DOM elements
 const setupView = document.getElementById('setupView');
@@ -21,6 +22,30 @@ document.addEventListener('DOMContentLoaded', () => {
   loadState();
   setupEventListeners();
 });
+
+function startDebugPreview() {
+  stopDebugPreview();
+
+  const img = document.getElementById("debugFrame");
+  if (!img) return;
+
+  debugPoll = setInterval(() => {
+    chrome.runtime.sendMessage({ action: "getLatestFrame" }, (res) => {
+      const frame = res?.frame;
+      if (frame?.dataUrl) {
+        img.src = frame.dataUrl;
+        img.style.display = "block";
+      }
+    });
+  }, 1000);
+}
+
+function stopDebugPreview() {
+  if (debugPoll) {
+    clearInterval(debugPoll);
+    debugPoll = null;
+  }
+}
 
 function setupEventListeners() {
   // Goal input
@@ -114,6 +139,7 @@ function startSession() {
 
   switchView('active');
   startTimer();
+  startDebugPreview();
 }
 
 
@@ -149,6 +175,7 @@ function pauseSession() {
 
 function completeSession() {
   clearInterval(timerInterval);
+  stopDebugPreview();
   
   chrome.storage.local.set({ isActive: false });
   chrome.runtime.sendMessage({ action: 'endSession' });
@@ -186,6 +213,7 @@ function loadState() {
       timeRemaining = Math.floor((data.endTime - Date.now()) / 1000);
       switchView('active');
       startTimer();
+      startDebugPreview();
     }
   });
 }

@@ -4,7 +4,7 @@
   "version": "1.0.1",
   "description": "AI-powered focus companion that helps you stay anchored to your goals",
 
-  "permissions": ["storage", "alarms", "tabs", "webNavigation"],
+  "permissions": ["storage", "alarms", "tabs", "webNavigation", "offscreen", "tabCapture", "activeTab"],
   "host_permissions": ["<all_urls>"],
 
   "background": {
@@ -25,11 +25,5 @@
       "resources": ["blocked/index.html", "next-assets/*"],
       "matches": ["<all_urls>"]
     }
-  ],
-
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  ]
 }
