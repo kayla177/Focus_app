@@ -1,165 +1,191 @@
-// Popup script for Focus Mode extension
+// State management
+let currentView = 'setup';
+let sessionGoal = '';
+let sessionDuration = 25;
+let timeRemaining = 0;
+let timerInterval = null;
 
+// DOM elements
+const setupView = document.getElementById('setupView');
+const activeView = document.getElementById('activeView');
+const summaryView = document.getElementById('summaryView');
+const goalInput = document.getElementById('goalInput');
+const durationSlider = document.getElementById('durationSlider');
+const durationValue = document.getElementById('durationValue');
+const startBtn = document.getElementById('startBtn');
+const presetBtns = document.querySelectorAll('.preset-btn');
+const allowedInput = document.getElementById('allowedInput');
+
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
-  const setupView = document.getElementById('setupView');
-  const activeView = document.getElementById('activeView');
-  const siteInput = document.getElementById('siteInput');
-  const addSiteBtn = document.getElementById('addSiteBtn');
-  const allowedSitesList = document.getElementById('allowedSitesList');
-  const durationBtns = document.querySelectorAll('.duration-btn');
-  const customMinutes = document.getElementById('customMinutes');
-  const startBtn = document.getElementById('startBtn');
-  const endBtn = document.getElementById('endBtn');
-  const timerText = document.getElementById('timerText');
-  const focusSitesList = document.getElementById('focusSitesList');
-
-  let allowedSites = [];
-  let selectedDuration = 60; // Default 60 minutes
-  let timerInterval;
-
-  // Check current status
-  checkStatus();
-
-  // Duration button clicks
-  durationBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      durationBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedDuration = parseInt(btn.dataset.minutes);
-      customMinutes.value = '';
-    });
-  });
-
-  // Custom duration input
-  customMinutes.addEventListener('input', () => {
-    if (customMinutes.value) {
-      durationBtns.forEach(b => b.classList.remove('active'));
-      selectedDuration = parseInt(customMinutes.value) || 60;
-    }
-  });
-
-  // Add site button
-  addSiteBtn.addEventListener('click', addSite);
-  siteInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') addSite();
-  });
-
-  // Start focus session
-  startBtn.addEventListener('click', () => {
-    // Add current input if not empty
-    if (siteInput.value.trim()) {
-      addSite();
-    }
-
-    if (allowedSites.length === 0) {
-      alert('Please add at least one website to focus on!');
-      return;
-    }
-
-    chrome.runtime.sendMessage({
-      action: 'startFocus',
-      allowedSites: allowedSites,
-      duration: selectedDuration
-    }, (response) => {
-      if (response && response.success) {
-        checkStatus();
-      }
-    });
-  });
-
-  // End session early
-  endBtn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to end your focus session early?')) {
-      chrome.runtime.sendMessage({ action: 'stopFocus' }, () => {
-        checkStatus();
-      });
-    }
-  });
-
-  function addSite() {
-    let site = siteInput.value.trim().toLowerCase();
-    if (!site) return;
-
-    // Clean up the URL
-    site = site.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
-
-    if (!allowedSites.includes(site)) {
-      allowedSites.push(site);
-      renderAllowedSites();
-    }
-    siteInput.value = '';
-  }
-
-  function removeSite(site) {
-    allowedSites = allowedSites.filter(s => s !== site);
-    renderAllowedSites();
-  }
-
-  function renderAllowedSites() {
-    allowedSitesList.innerHTML = '';
-    allowedSites.forEach(site => {
-      const div = document.createElement('div');
-      div.className = 'site-tag';
-      div.innerHTML = `
-        <span>${site}</span>
-        <button class="remove-tag" data-site="${site}">×</button>
-      `;
-      allowedSitesList.appendChild(div);
-    });
-
-    document.querySelectorAll('.remove-tag').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        removeSite(e.target.dataset.site);
-      });
-    });
-  }
-
-  function checkStatus() {
-    chrome.runtime.sendMessage({ action: 'getStatus' }, (data) => {
-      if (data && data.focusMode && data.endTime > Date.now()) {
-        showActiveView(data);
-      } else {
-        showSetupView();
-      }
-    });
-  }
-
-  function showSetupView() {
-    setupView.style.display = 'block';
-    activeView.style.display = 'none';
-    allowedSites = [];
-    renderAllowedSites();
-    if (timerInterval) clearInterval(timerInterval);
-  }
-
-  function showActiveView(data) {
-    setupView.style.display = 'none';
-    activeView.style.display = 'block';
-
-    // Show focus sites
-    focusSitesList.innerHTML = '';
-    (data.allowedSites || []).forEach(site => {
-      const li = document.createElement('li');
-      li.textContent = site;
-      focusSitesList.appendChild(li);
-    });
-
-    // Start timer
-    updateTimer(data.endTime);
-    if (timerInterval) clearInterval(timerInterval);
-    timerInterval = setInterval(() => updateTimer(data.endTime), 1000);
-  }
-
-  function updateTimer(endTime) {
-    const remaining = Math.max(0, endTime - Date.now());
-    
-    if (remaining <= 0) {
-      checkStatus();
-      return;
-    }
-
-    const minutes = Math.floor(remaining / 60000);
-    const seconds = Math.floor((remaining % 60000) / 1000);
-    timerText.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
+  loadState();
+  setupEventListeners();
 });
+
+function setupEventListeners() {
+  // Goal input
+  goalInput.addEventListener('input', () => {
+    startBtn.disabled = !goalInput.value.trim();
+  });
+
+  // Duration slider
+  durationSlider.addEventListener('input', () => {
+    const value = durationSlider.value;
+    durationValue.textContent = `${value} minutes`;
+    sessionDuration = parseInt(value);
+    updatePresetButtons();
+  });
+
+  // Preset buttons
+  presetBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const duration = parseInt(btn.dataset.duration);
+      durationSlider.value = duration;
+      sessionDuration = duration;
+      durationValue.textContent = `${duration} minutes`;
+      updatePresetButtons();
+    });
+  });
+
+  // Start button
+  startBtn.addEventListener('click', startSession);
+
+  // Pause button
+  document.getElementById('pauseBtn').addEventListener('click', pauseSession);
+
+  // New session button
+  document.getElementById('newSessionBtn').addEventListener('click', resetToSetup);
+}
+
+function updatePresetButtons() {
+  presetBtns.forEach(btn => {
+    const duration = parseInt(btn.dataset.duration);
+    btn.classList.toggle('active', duration === sessionDuration);
+  });
+}
+
+function normalizeAllowedEntry(entry) {
+  let s = (entry || '').trim();
+  if (!s) return null;
+
+  // allow "*.domain.com"
+  s = s.replace(/^https?:\/\//, '');
+  s = s.replace(/^www\./, '');
+  s = s.split('/')[0];        // drop path
+  s = s.split('?')[0];        // drop query
+
+  if (s.startsWith('*.')) s = s.slice(2); // store wildcard as base domain
+  return s || null;
+}
+
+function parseAllowedHosts(text) {
+  return (text || '')
+    .split(/\n|,|;/g)
+    .map(normalizeAllowedEntry)
+    .filter(Boolean);
+}
+
+
+function startSession() {
+  sessionGoal = goalInput.value.trim();
+  timeRemaining = sessionDuration * 60;
+
+  const allowedListText = (allowedInput?.value || '').trim();
+  const allowedHosts = parseAllowedHosts(allowedListText);
+
+  // Save state (store the raw text so we can re-populate the textarea)
+  chrome.storage.local.set({
+    isActive: true,
+    goal: sessionGoal,
+    duration: sessionDuration,
+    startTime: Date.now(),
+    endTime: Date.now() + (sessionDuration * 60 * 1000),
+    allowedHosts,          // normalized array
+    allowedListText        // raw textarea value
+  });
+
+  // Send message to background script
+  chrome.runtime.sendMessage({
+    action: 'startSession',
+    goal: sessionGoal,
+    duration: sessionDuration,
+    allowedHosts
+  });
+
+  switchView('active');
+  startTimer();
+}
+
+
+function startTimer() {
+  document.getElementById('activeGoal').textContent = sessionGoal;
+  updateTimerDisplay();
+
+  timerInterval = setInterval(() => {
+    timeRemaining--;
+    updateTimerDisplay();
+
+    if (timeRemaining <= 0) {
+      completeSession();
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const mins = Math.floor(timeRemaining / 60);
+  const secs = timeRemaining % 60;
+  document.getElementById('timeDisplay').textContent = 
+    `${mins}:${secs.toString().padStart(2, '0')}`;
+
+  // Update progress circle
+  const progress = ((sessionDuration * 60 - timeRemaining) / (sessionDuration * 60)) * 565;
+  document.getElementById('timerProgress').style.strokeDashoffset = 565 - progress;
+}
+
+function pauseSession() {
+  clearInterval(timerInterval);
+  completeSession();
+}
+
+function completeSession() {
+  clearInterval(timerInterval);
+  
+  chrome.storage.local.set({ isActive: false });
+  chrome.runtime.sendMessage({ action: 'endSession' });
+
+  // Show summary
+  document.getElementById('summaryGoal').textContent = sessionGoal;
+  document.getElementById('deepWorkTime').textContent = `${sessionDuration - 3}m`;
+  
+  switchView('summary');
+}
+
+function resetToSetup() {
+  goalInput.value = '';
+  startBtn.disabled = true;
+  timeRemaining = 0;
+  switchView('setup');
+}
+
+function switchView(view) {
+  setupView.style.display = view === 'setup' ? 'block' : 'none';
+  activeView.style.display = view === 'active' ? 'block' : 'none';
+  summaryView.style.display = view === 'summary' ? 'block' : 'none';
+  currentView = view;
+}
+
+function loadState() {
+  chrome.storage.local.get(['isActive', 'goal', 'duration', 'endTime', 'allowedListText'], (data) => {
+    if (allowedInput) {
+      allowedInput.value = data.allowedListText || '';
+    }
+
+    if (data.isActive && data.endTime > Date.now()) {
+      sessionGoal = data.goal;
+      sessionDuration = data.duration;
+      timeRemaining = Math.floor((data.endTime - Date.now()) / 1000);
+      switchView('active');
+      startTimer();
+    }
+  });
+}

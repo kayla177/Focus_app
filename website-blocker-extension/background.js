@@ -1,116 +1,62 @@
-// Background service worker for Focus Mode extension
-
-// Initialize on install
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({
-    focusMode: false,
-    allowedSites: [],
-    endTime: null
-  });
-});
-
-// Check if URL is allowed during focus mode
-function isUrlAllowed(url, allowedSites) {
-  if (!url) return true;
-  
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
-    
-    // Always allow extension pages and chrome pages
-    if (url.startsWith('chrome://') || 
-        url.startsWith('chrome-extension://') ||
-        url.startsWith('about:') ||
-        url.startsWith('edge://')) {
-      return true;
-    }
-    
-    // Check if hostname matches any allowed site
-    return allowedSites.some(site => {
-      const cleanSite = site.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
-      return hostname === cleanSite || 
-             hostname === 'www.' + cleanSite ||
-             hostname.endsWith('.' + cleanSite);
-    });
-  } catch (e) {
-    return true;
-  }
-}
-
-// Listen for tab updates and navigation
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    checkAndBlockTab(tabId, changeInfo.url);
-  }
-});
-
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  chrome.tabs.get(activeInfo.tabId, (tab) => {
-    if (tab && tab.url) {
-      checkAndBlockTab(activeInfo.tabId, tab.url);
-    }
-  });
-});
-
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId === 0) { // Main frame only
-    checkAndBlockTab(details.tabId, details.url);
-  }
-});
-
-async function checkAndBlockTab(tabId, url) {
-  const data = await chrome.storage.local.get(['focusMode', 'allowedSites', 'endTime']);
-  
-  if (!data.focusMode) return;
-  
-  // Check if focus session has ended
-  if (data.endTime && Date.now() > data.endTime) {
-    await endFocusSession();
-    return;
-  }
-  
-  if (!isUrlAllowed(url, data.allowedSites || [])) {
-    // Redirect to blocked page
-    const blockedUrl = chrome.runtime.getURL('blocked.html');
-    chrome.tabs.update(tabId, { url: blockedUrl });
-  }
-}
-
-async function endFocusSession() {
-  await chrome.storage.local.set({
-    focusMode: false,
-    allowedSites: [],
-    endTime: null
-  });
-  chrome.alarms.clear('focusEnd');
-}
-
-// Handle alarm for session end
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'focusEnd') {
-    endFocusSession();
-  }
-});
+// Session management
+let isSessionActive = false;
+let sessionGoal = '';
+let allowedUrls = [];
+let distractionCount = 0;
 
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'startFocus') {
-    const endTime = Date.now() + (message.duration * 60 * 1000);
-    chrome.storage.local.set({
-      focusMode: true,
-      allowedSites: message.allowedSites,
-      endTime: endTime
-    });
-    chrome.alarms.create('focusEnd', { when: endTime });
-    sendResponse({ success: true });
-  } else if (message.action === 'stopFocus') {
-    endFocusSession();
-    sendResponse({ success: true });
-  } else if (message.action === 'getStatus') {
-    chrome.storage.local.get(['focusMode', 'allowedSites', 'endTime'], (data) => {
-      sendResponse(data);
-    });
-    return true; // Keep channel open for async response
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'startSession') {
+    startSession(request.goal, request.duration);
+  } else if (request.action === 'endSession') {
+    endSession();
   }
-  return true;
+});
+
+function startSession(goal, duration) {
+  isSessionActive = true;
+  sessionGoal = goal;
+  distractionCount = 0;
+
+  // Get current tab and allow it
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      const url = new URL(tabs[0].url);
+      allowedUrls = [url.hostname];
+    }
+  });
+
+  // Set up alarm for session end
+  chrome.alarms.create('sessionEnd', { delayInMinutes: duration });
+}
+
+function endSession() {
+  isSessionActive = false;
+  sessionGoal = '';
+  allowedUrls = [];
+  chrome.alarms.clear('sessionEnd');
+}
+
+// Monitor tab navigation
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (!isSessionActive || details.frameId !== 0) return;
+
+  const url = new URL(details.url);
+  const isAllowed = allowedUrls.some(allowed => url.hostname.includes(allowed));
+
+  if (!isAllowed && !url.protocol.startsWith('chrome')) {
+    distractionCount++;
+    // Redirect to blocked page
+    chrome.tabs.update(details.tabId, {
+      url: chrome.runtime.getURL('blocked.html') + 
+           `?goal=${encodeURIComponent(sessionGoal)}`
+    });
+  }
+});
+
+// Handle session end alarm
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'sessionEnd') {
+    endSession();
+  }
 });

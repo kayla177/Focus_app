@@ -1,141 +1,51 @@
+<!-- ============================================ -->
+<!-- blocked.html -->
+<!-- ============================================ -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stay Focused!</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-    }
-
-    .container {
-      text-align: center;
-      padding: 40px;
-      max-width: 550px;
-      margin: 20px;
-    }
-
-    .icon {
-      font-size: 100px;
-      margin-bottom: 20px;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-
-    h1 {
-      font-size: 2.5rem;
-      margin-bottom: 15px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .subtitle {
-      font-size: 1.3rem;
-      opacity: 0.9;
-      margin-bottom: 30px;
-      line-height: 1.6;
-    }
-
-    .message-box {
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 15px;
-      padding: 25px;
-      margin: 25px 0;
-      border-left: 4px solid #667eea;
-    }
-
-    .quote {
-      font-style: italic;
-      font-size: 1.1rem;
-      opacity: 0.9;
-      line-height: 1.7;
-    }
-
-    .author {
-      margin-top: 12px;
-      font-size: 0.9rem;
-      opacity: 0.7;
-    }
-
-    .reminder {
-      background: rgba(255, 107, 107, 0.1);
-      border: 1px solid rgba(255, 107, 107, 0.3);
-      border-radius: 10px;
-      padding: 15px 20px;
-      margin-top: 25px;
-      font-size: 0.95rem;
-    }
-
-    .reminder strong {
-      color: #ff6b6b;
-    }
-
-    .timer-info {
-      margin-top: 30px;
-      padding: 15px;
-      background: rgba(102, 126, 234, 0.1);
-      border-radius: 10px;
-      font-size: 0.9rem;
-      color: #aaa;
-    }
-  </style>
+  <title>Gentle Nudge - Anchor</title>
+  <link rel="stylesheet" href="blocked.css">
 </head>
 <body>
   <div class="container">
-    <div class="icon">🎯</div>
-    <h1>Focus Mode Active!</h1>
-    <p class="subtitle">You're currently in a focus session.<br>This site is blocked to help you stay on track.</p>
-    
-    <div class="message-box">
-      <p class="quote" id="quote">"The successful warrior is the average man, with laser-like focus."</p>
-      <p class="author" id="author">— Bruce Lee</p>
+    <div class="icon-circle">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+        <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+      </svg>
     </div>
 
-    <div class="reminder">
-      <strong>Remember:</strong> You chose to focus for a reason. Your future self will thank you!
-    </div>
+    <h1>Gentle Nudge</h1>
+    <p class="message">
+      You seem to be drifting. Shall we get back to
+      <span class="goal" id="goalText">your focus</span>?
+    </p>
 
-    <div class="timer-info">
-      💡 Complete your focus session to access this site again.
+    <div class="buttons">
+      <button id="backBtn" class="primary-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        I'm Back
+      </button>
+      <button id="breakBtn" class="secondary-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+          <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+          <line x1="6" y1="1" x2="6" y2="4"/>
+          <line x1="10" y1="1" x2="10" y2="4"/>
+          <line x1="14" y1="1" x2="14" y2="4"/>
+        </svg>
+        Take a Break
+      </button>
     </div>
   </div>
 
-  <script>
-    const quotes = [
-      { text: "The successful warrior is the average man, with laser-like focus.", author: "Bruce Lee" },
-      { text: "Focus on being productive instead of busy.", author: "Tim Ferriss" },
-      { text: "Concentrate all your thoughts upon the work at hand. The sun's rays do not burn until brought to a focus.", author: "Alexander Graham Bell" },
-      { text: "It is during our darkest moments that we must focus to see the light.", author: "Aristotle" },
-      { text: "The key to success is to focus on goals, not obstacles.", author: "Unknown" },
-      { text: "Lack of direction, not lack of time, is the problem. We all have twenty-four hour days.", author: "Zig Ziglar" },
-      { text: "You can't depend on your eyes when your imagination is out of focus.", author: "Mark Twain" },
-      { text: "Stay focused, go after your dreams and keep moving toward your goals.", author: "LL Cool J" },
-      { text: "Where focus goes, energy flows.", author: "Tony Robbins" },
-      { text: "The ability to focus attention on important things is a defining characteristic of intelligence.", author: "Robert J. Shiller" }
-    ];
+  <script src="blocked.js"></script>
 
-    const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-    document.getElementById('quote').textContent = `"${randomQuote.text}"`;
-    document.getElementById('author').textContent = `— ${randomQuote.author}`;
-  </script>
 </body>
 </html>
