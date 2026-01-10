@@ -4,7 +4,7 @@
   "version": "1.0.1",
   "description": "AI-powered focus companion that helps you stay anchored to your goals",
 
-  "permissions": ["storage", "alarms", "tabs", "webNavigation"],
+  "permissions": ["storage", "alarms", "tabs", "webNavigation", "notifications"],
   "host_permissions": ["<all_urls>"],
 
   "background": {
@@ -22,7 +22,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["blocked/index.html", "next-assets/*"],
+      "resources": ["blocked/index.html", "next-assets/*", "monitor.html", "monitor.css", "monitor.js", "libs/*"],
       "matches": ["<all_urls>"]
     }
   ],

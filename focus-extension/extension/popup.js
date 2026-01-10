@@ -54,8 +54,13 @@ function setupEventListeners() {
 	// Pause button
 	document.getElementById("pauseBtn").addEventListener("click", pauseSession);
 
+	// Focus Monitor button
+	document.getElementById("monitorBtn")?.addEventListener("click", () => {
+		chrome.tabs.create({ url: chrome.runtime.getURL("monitor.html") });
+	});
+
 	// End break button
-	document.getElementById("endBreakBtn").addEventListener("click", endBreak);
+	document.getElementById("endBreakBtn")?.addEventListener("click", endBreak);
 
 	// New session button
 	document

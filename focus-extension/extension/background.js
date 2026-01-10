@@ -6,7 +6,7 @@ let distractionCount = 0;
 let isOnBreak = false;
 let breakEndTime = null;
 
-chrome.runtime.onMessage.addListener((request) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	if (request.action === "startSession") {
 		startSession(request.goal, request.duration, request.blockedSites);
 	} else if (request.action === "endSession") {
@@ -15,7 +15,11 @@ chrome.runtime.onMessage.addListener((request) => {
 		takeBreak();
 	} else if (request.action === "resumeSession") {
 		resumeSession();
+	} else if (request.type === "FOCUS_ALERT") {
+		// Show Chrome notification for focus alerts (works even when monitor tab not focused)
+		showFocusNotification(request.title, request.message);
 	}
+	return true;
 });
 
 function startSession(goal, duration, blocked) {
@@ -113,4 +117,42 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 		// notify popup to resume timer
 		chrome.runtime.sendMessage({ action: "breakEnded" }).catch(() => {});
 	}
+});
+
+// Focus notification with sound (works in background)
+let lastNotificationTime = 0;
+function showFocusNotification(title, message) {
+  const now = Date.now();
+  // Throttle: max one notification every 5 seconds
+  if (now - lastNotificationTime < 5000) return;
+  lastNotificationTime = now;
+  
+  const notificationId = 'focus-alert-' + now;
+  chrome.notifications.create(notificationId, {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: title || 'Focus Alert!',
+    message: message || 'You seem distracted. Get back on track!',
+    priority: 2,
+    requireInteraction: false,
+    silent: false // This enables notification sound
+  }, () => {
+    // Auto-close after 4 seconds
+    setTimeout(() => {
+      chrome.notifications.clear(notificationId);
+    }, 4000);
+  });
+}
+
+// Click notification to focus the monitor tab
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith('focus-alert-')) {
+    // Find and focus the monitor tab
+    chrome.tabs.query({ url: chrome.runtime.getURL('monitor.html') }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.update(tabs[0].id, { active: true });
+        chrome.windows.update(tabs[0].windowId, { focused: true });
+      }
+    });
+  }
 });
