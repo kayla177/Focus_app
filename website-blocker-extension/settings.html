@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Mode - Settings</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: white;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-bottom: 30px;
+      text-align: center;
+      font-size: 1.8rem;
+    }
+
+    .settings-section {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .settings-section h2 {
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .setting-item {
+      margin-bottom: 15px;
+    }
+
+    .setting-item label {
+      display: block;
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .setting-item input,
+    .setting-item select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #0f0f1a;
+      color: white;
+      font-family: 'Courier New', monospace;
+    }
+
+    .setting-item input:focus,
+    .setting-item select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .setting-item input::placeholder {
+      color: #666;
+    }
+
+    .password-toggle {
+      margin-top: 6px;
+    }
+
+    .password-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: none;
+      letter-spacing: normal;
+      font-size: 12px;
+      cursor: pointer;
+      color: #ddd;
+    }
+
+    .password-toggle input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .primary-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .primary-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .danger-btn {
+      background: transparent;
+      border: 2px solid #ff6b6b;
+      color: #ff6b6b;
+    }
+
+    .danger-btn:hover {
+      background: #ff6b6b;
+      color: white;
+    }
+
+    .info-box {
+      background: rgba(102, 126, 234, 0.1);
+      border-left: 4px solid #667eea;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #ddd;
+      line-height: 1.5;
+      margin-bottom: 15px;
+    }
+
+    .success-message {
+      background: rgba(74, 222, 128, 0.1);
+      border-left: 4px solid #4ade80;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #4ade80;
+      margin-bottom: 15px;
+      display: none;
+    }
+
+    .error-message {
+      background: rgba(255, 107, 107, 0.1);
+      border-left: 4px solid #ff6b6b;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #ff6b6b;
+      margin-bottom: 15px;
+      display: none;
+    }
+
+    .help-text {
+      font-size: 11px;
+      color: #888;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    .status-indicator.configured {
+      background: #4ade80;
+    }
+
+    .status-indicator.not-configured {
+      background: #ff6b6b;
+    }
+
+    .divider {
+      border-top: 1px solid #333;
+      margin: 30px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 Focus Mode Settings</h1>
+
+    <div id="successMessage" class="success-message"></div>
+    <div id="errorMessage" class="error-message"></div>
+
+    <!-- LLM Configuration -->
+    <div class="settings-section">
+      <h2>
+        <span class="status-indicator" id="statusIndicator"></span>
+        AI Tab Analysis
+      </h2>
+
+      <div class="info-box">
+        ℹ️ Configure Claude API to enable AI-powered tab analysis. This allows the extension to determine if your open tabs are relevant to your current task.
+      </div>
+
+      <div class="setting-item">
+        <label for="apiKey">Claude API Key</label>
+        <input 
+          type="password" 
+          id="apiKey" 
+          placeholder="sk-ant-..."
+        >
+        <div class="password-toggle">
+          <label>
+            <input type="checkbox" id="showPassword">
+            Show password
+          </label>
+        </div>
+        <div class="help-text">
+          Get your free API key from <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <label for="apiModel">Model</label>
+        <select id="apiModel">
+          <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
+          <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+          <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
+          <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fastest)</option>
+        </select>
+        <div class="help-text">
+          Choose the model to use for analysis. Sonnet offers the best balance.
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button class="primary-btn" onclick="saveSettings()">💾 Save Settings</button>
+        <button class="danger-btn" onclick="clearSettings()">🗑️ Clear Settings</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Info Section -->
+    <div class="settings-section">
+      <h2>📚 Information</h2>
+
+      <div class="help-text">
+        <strong>How it works:</strong><br>
+        1. Enter your task and click "Analyze Open Tabs" in the popup<br>
+        2. The AI evaluates each tab to see if it matches your task<br>
+        3. Get relevance scores and recommendations<br><br>
+
+        <strong>Privacy:</strong><br>
+        • Only tab titles and URLs are sent to Claude<br>
+        • System/extension pages are filtered out<br>
+        • No browsing history is stored<br><br>
+
+        <strong>Fallback mode:</strong><br>
+        If no API key is configured, the extension uses keyword matching for basic analysis.
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>🔗 Resources</h2>
+      <div class="help-text">
+        <a href="https://console.anthropic.com/" target="_blank">→ Get Claude API Key</a><br>
+        <a href="https://docs.anthropic.com/en/api/getting-started" target="_blank">→ Claude Documentation</a><br>
+        <a href="https://github.com/anthropics/anthropic-sdk-js" target="_blank">→ Anthropic SDK</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const apiKeyInput = document.getElementById('apiKey');
+    const apiModelSelect = document.getElementById('apiModel');
+    const showPasswordCheckbox = document.getElementById('showPassword');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const successMessage = document.getElementById('successMessage');
+    const errorMessage = document.getElementById('errorMessage');
+
+    // Load settings on page load
+    loadSettings();
+
+    // Toggle password visibility
+    showPasswordCheckbox.addEventListener('change', () => {
+      apiKeyInput.type = showPasswordCheckbox.checked ? 'text' : 'password';
+    });
+
+    function loadSettings() {
+      chrome.storage.local.get(['llmApiKey', 'llmModel'], (data) => {
+        if (data.llmApiKey) {
+          // Show masked version of API key
+          apiKeyInput.value = maskApiKey(data.llmApiKey);
+          statusIndicator.className = 'status-indicator configured';
+          statusIndicator.title = 'API key configured';
+        } else {
+          statusIndicator.className = 'status-indicator not-configured';
+          statusIndicator.title = 'API key not configured';
+        }
+
+        if (data.llmModel) {
+          apiModelSelect.value = data.llmModel;
+        }
+      });
+    }
+
+    function maskApiKey(key) {
+      if (!key) return '';
+      const start = key.substring(0, 10);
+      const end = key.substring(key.length - 6);
+      return `${start}...${end}`;
+    }
+
+    function saveSettings() {
+      const apiKey = apiKeyInput.value.trim();
+      const apiModel = apiModelSelect.value;
+
+      if (!apiKey) {
+        showError('Please enter an API key');
+        return;
+      }
+
+      // Only save if it looks like a valid API key (not masked)
+      if (apiKey.includes('...')) {
+        showError('Cannot update a masked API key. Please paste a new one.');
+        return;
+      }
+
+      chrome.storage.local.set({
+        llmApiKey: apiKey,
+        llmModel: apiModel
+      }, () => {
+        showSuccess('Settings saved successfully!');
+        statusIndicator.className = 'status-indicator configured';
+        statusIndicator.title = 'API key configured';
+        // Mask the API key after saving
+        apiKeyInput.value = maskApiKey(apiKey);
+      });
+    }
+
+    function clearSettings() {
+      if (confirm('Are you sure you want to clear all settings? Tab analysis will fall back to keyword matching.')) {
+        chrome.storage.local.remove(['llmApiKey', 'llmModel'], () => {
+          apiKeyInput.value = '';
+          apiModelSelect.value = 'claude-3-5-sonnet-20241022';
+          statusIndicator.className = 'status-indicator not-configured';
+          statusIndicator.title = 'API key not configured';
+          showSuccess('Settings cleared. Fallback mode enabled.');
+        });
+      }
+    }
+
+    function showSuccess(message) {
+      successMessage.textContent = '✅ ' + message;
+      successMessage.style.display = 'block';
+      errorMessage.style.display = 'none';
+      setTimeout(() => {
+        successMessage.style.display = 'none';
+      }, 3000);
+    }
+
+    function showError(message) {
+      errorMessage.textContent = '❌ ' + message;
+      errorMessage.style.display = 'block';
+      successMessage.style.display = 'none';
+    }
+  </script>
+</body>
+</html>

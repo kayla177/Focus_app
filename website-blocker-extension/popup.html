@@ -13,6 +13,15 @@
     <!-- Setup View -->
     <div id="setupView">
       <div class="input-section">
+        <label>What task are you working on?</label>
+        <input 
+          type="text" 
+          id="taskInput" 
+          placeholder="e.g., Complete Python project, Study for exam"
+        >
+      </div>
+
+      <div class="input-section">
         <label>Focus on this website:</label>
         <input 
           type="text" 
@@ -43,6 +52,15 @@
       <button id="startBtn" class="primary-btn">🚀 Start Focus Session</button>
       
       <p class="info-text">⚠️ All other websites will be blocked during your session!</p>
+
+      <hr>
+
+      <div class="analysis-section">
+        <h3>📊 Tab Analysis (Beta)</h3>
+        <p class="info-text">Analyze your open tabs to see if they match your task</p>
+        <button id="analyzeTabsBtn" class="secondary-btn">Analyze Open Tabs</button>
+        <div id="analysisResults" class="analysis-results" style="display: none;"></div>
+      </div>
     </div>
 
     <!-- Active Session View -->
@@ -57,10 +75,24 @@
         <ul id="focusSitesList"></ul>
       </div>
 
+      <div class="session-task">
+        <p><strong>Current Task:</strong> <span id="currentTask"></span></p>
+      </div>
+
+      <!-- Distraction Warnings Section -->
+      <div id="distractionWarnings" class="distraction-section" style="display: none;">
+        <div class="distraction-header">
+          <h3>⚠️ Distracting Tabs Detected</h3>
+          <p class="distraction-count" id="distractionCount"></p>
+        </div>
+        <div id="distractingTabsList" class="distracting-tabs-list"></div>
+      </div>
+
       <button id="endBtn" class="danger-btn">End Session Early</button>
     </div>
   </div>
 
+  <script src="llm-analyzer.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

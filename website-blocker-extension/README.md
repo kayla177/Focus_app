@@ -14,11 +14,14 @@ Perfect for studying when you need to stay on your course website!
 ## Features
 
 - ✅ Allow only specific websites during focus sessions
+- ✅ **🎯 MAJOR: Continuous AI-powered tab monitoring** - Real-time detection of distracting tabs with instant warnings
+- ✅ **NEW: AI-powered tab analysis** - LLM checks if your open tabs match your task
 - ✅ Timer with preset durations (25m, 45m, 1h, 2h) or custom
 - ✅ Blocks ALL other sites (YouTube, Reddit, etc.)
 - ✅ Motivational quotes on blocked pages
 - ✅ Can add multiple allowed sites
 - ✅ End session early if needed
+- ✅ Specify your task and track it during focus session
 
 ## Installation
 
@@ -37,19 +40,39 @@ Perfect for studying when you need to stay on your course website!
 
 ## Usage
 
+### Basic Focus Session
+
 1. Click the extension icon in your browser toolbar
-2. Enter the website you want to focus on (e.g., `learn.uwaterloo.ca`)
-3. Click **"+ Add Another Site"** if you need multiple sites
-4. Select a duration (25m, 45m, 1h, 2h, or custom)
-5. Click **🚀 Start Focus Session**
-6. Now ONLY your allowed sites will work - everything else shows a "Stay Focused" page!
+2. **Enter your task** (e.g., "Complete Python project")
+3. Enter the website you want to focus on (e.g., `learn.uwaterloo.ca`)
+4. Click **"+ Add Another Site"** if you need multiple sites
+5. Select a duration (25m, 45m, 1h, 2h, or custom)
+6. Click **🚀 Start Focus Session**
+7. Now ONLY your allowed sites will work - everything else shows a "Stay Focused" page!
 
-### Example: Studying for 1 Hour
+### Analyzing Your Open Tabs
 
-1. Enter `learn.uwaterloo.ca`
-2. Select `1h` duration
-3. Click Start
-4. Now YouTube, Reddit, Twitter, etc. are all blocked until the hour is up!
+1. Enter your task description
+2. Click **"Analyze Open Tabs"** button
+3. The AI will evaluate each open tab to see if it's related to your task
+4. Results show:
+   - Relevance score for each tab
+   - Brief explanation for each tab
+   - Overall relevance     # Extension configuration
+├── background.js          # Service worker for blocking logic
+├── popup.html             # Extension popup UI
+├── popup.js               # Popup functionality
+├── popup.css              # Popup styles
+├── llm-analyzer.js        # AI tab analysis (NEW!)
+├── blocked.html           # Page shown when trying to access blocked sites
+├── LLM_SETUP_GUIDE.md     # Setup guide for LLM features (NEW!)
+└── README.md    
+1. Enter task: "Study for statistics exam"
+2. Enter site: `learn.uwaterloo.ca`
+3. Click "Analyze Open Tabs" to see which tabs are relevant
+4. Select `1h` duration
+5. Click Start
+6. Now YouTube, Reddit, Twitter, etc. are all blocked until the hour is up!
 
 ## Files Structure
 
@@ -67,6 +90,27 @@ website-blocker-extension/
 ## Troubleshooting
 
 - **Extension not working?** Make sure Developer mode is enabled and reload the extension
+- **Tab analysis not working?** See [LLM_SETUP_GUIDE.md](LLM_SETUP_GUIDE.md) for configuration steps
+- **"API Error: Unauthorized"?** Check that your Claude API key is valid and properly configured
+
+## Advanced Features
+
+### LLM Tab Analysis
+
+The extension can now use AI to analyze whether your open tabs match your task:
+- Specify your current task before analyzing
+- Get relevance scores for each open tab
+- Identify and close distracting tabs before starting
+- Optional: Requires Claude API key (free tier available)
+
+For setup instructions, see [LLM_SETUP_GUIDE.md](LLM_SETUP_GUIDE.md).
+
+### Fallback Mode
+
+If you don't configure an LLM API:
+- Tab analysis uses keyword matching instead
+- Provides basic relevance detection
+- No API calls, fully local analysis
 - **Sites still accessible?** Try closing and reopening Chrome tabs
 - **Timer not showing?** Reopen the popup to see current session status
 
