@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anchor</title>
+  <link rel="stylesheet" href="../popup.css" />
+</head>
+
+<body>
+  <!-- Setup View -->
+  <div id="setupView" class="view">
+    <div class="header">
+      <div class="icon-circle">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <circle cx="12" cy="5" r="3"/>
+          <path d="M12 22V8M5 12H2a10 10 0 0 0 20 0h-3"/>
+        </svg>
+      </div>
+      <h1>Anchor</h1>
+      <p class="subtitle">Your AI-powered focus companion</p>
+    </div>
+
+    <div class="card">
+      <div class="form-group">
+        <label>What is your main focus right now?</label>
+        <input
+          type="text"
+          id="goalInput"
+          placeholder="e.g., Write project proposal, Study for exam..."
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="form-group">
+        <label>Allowed sites (one per line)</label>
+        <textarea
+          id="allowedInput"
+          rows="4"
+          placeholder="e.g.
+docs.google.com
+leetcode.com
+github.com
+*.notion.so"
+        ></textarea>
+        <p class="hint">Tip: use domains (no http needed). “*.domain.com” is supported.</p>
+      </div>
+
+      <div class="form-group">
+        <label>Focus Duration</label>
+        <input type="range" id="durationSlider" min="5" max="120" step="5" value="25" />
+        <div class="duration-display">
+          <span>5 min</span>
+          <span id="durationValue" class="duration-main">25 minutes</span>
+          <span>120 min</span>
+        </div>
+        <div class="preset-buttons">
+          <button class="preset-btn" data-duration="15" type="button">15m</button>
+          <button class="preset-btn active" data-duration="25" type="button">25m</button>
+          <button class="preset-btn" data-duration="45" type="button">45m</button>
+          <button class="preset-btn" data-duration="60" type="button">60m</button>
+        </div>
+      </div>
+
+      <button id="startBtn" class="primary-btn" disabled>
+        Drop Anchor
+      </button>
+    </div>
+  </div>
+
+  <!-- Active View -->
+  <div id="activeView" class="view" style="display: none;">
+    <div class="active-container">
+      <div class="ai-badge">
+        <span class="pulse-dot"></span>
+        AI Copilot Active
+      </div>
+
+      <div class="goal-display">
+        <p class="goal-label">Currently anchored to:</p>
+        <h2 id="activeGoal" class="goal-text">Your goal here</h2>
+      </div>
+
+      <div class="timer-circle">
+        <svg viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="90" class="timer-bg"/>
+          <circle cx="100" cy="100" r="90" class="timer-progress" id="timerProgress"/>
+        </svg>
+        <div class="timer-text">
+          <div id="timeDisplay" class="time-big">25:00</div>
+          <div class="time-label">remaining</div>
+        </div>
+      </div>
+
+      <button id="pauseBtn" class="secondary-btn" type="button">Pause Session</button>
+    </div>
+  </div>
+
+  <!-- Summary View -->
+  <div id="summaryView" class="view" style="display: none;">
+    <div class="summary-container">
+      <h1 class="summary-title">Session Complete!</h1>
+      <p class="summary-goal">You anchored to: <span id="summaryGoal"></span></p>
+      <div class="stat-card">
+        <div class="stat-label">Deep Work</div>
+        <div class="stat-value" id="deepWorkTime">22m</div>
+      </div>
+      <button id="newSessionBtn" class="primary-btn dark" type="button">Start New Session</button>
+    </div>
+  </div>
+
+  <script defer src="../popup.js"></script>
+</body>
+</html>
