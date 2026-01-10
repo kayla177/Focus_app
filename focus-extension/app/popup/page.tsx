@@ -250,7 +250,7 @@ export default function PopupPage() {
           <p className="encouragement">Stay focused. You've got this.</p>
 
           <button id="pauseBtn" className="secondary-btn" onClick={pauseSession}>
-            Pause Session
+            End Session
           </button>
         </div>
       </div>

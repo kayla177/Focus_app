@@ -41,12 +41,21 @@ function takeBreak() {
 	isOnBreak = true;
 	breakEndTime = Date.now() + 5 * 60 * 1000; // 5 minutes
 	chrome.alarms.create("breakEnd", { delayInMinutes: 5 });
+
+	// Store break state so popup can restore it
+	chrome.storage.local.set({ isOnBreak: true, breakEndTime });
+
+	// Notify popup to show break timer
+	chrome.runtime.sendMessage({ action: "takeBreak" }).catch(() => {});
 }
 
 function resumeSession() {
 	isOnBreak = false;
 	breakEndTime = null;
 	chrome.alarms.clear("breakEnd");
+
+	// Clear break state from storage
+	chrome.storage.local.set({ isOnBreak: false, breakEndTime: null });
 }
 
 function isHostBlocked(hostname, blockedList) {
@@ -77,6 +86,9 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 	// don't block chrome:// pages etc
 	if (url.protocol.startsWith("chrome")) return;
 
+	// Skip blocking during break
+	if (isOnBreak) return;
+
 	const isBlocked = isHostBlocked(url.hostname, blockedSites);
 
 	if (isBlocked) {
@@ -85,7 +97,9 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 		// IMPORTANT: Next export blocked page path
 		const blockedUrl =
 			chrome.runtime.getURL("blocked/index.html") +
-			`?goal=${encodeURIComponent(sessionGoal)}`;
+			`?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(
+				details.url
+			)}`;
 
 		chrome.tabs.update(details.tabId, { url: blockedUrl });
 	}

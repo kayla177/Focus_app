@@ -54,6 +54,9 @@ function setupEventListeners() {
 	// Pause button
 	document.getElementById("pauseBtn").addEventListener("click", pauseSession);
 
+	// End break button
+	document.getElementById("endBreakBtn").addEventListener("click", endBreak);
+
 	// New session button
 	document
 		.getElementById("newSessionBtn")
@@ -62,10 +65,9 @@ function setupEventListeners() {
 	// Listen for break end message from background
 	chrome.runtime.onMessage.addListener((request) => {
 		if (request.action === "breakEnded") {
-			isOnBreak = false;
-			if (timerInterval === null && currentView === "active") {
-				resumeTimer();
-			}
+			endBreak();
+		} else if (request.action === "takeBreak") {
+			startBreak();
 		}
 	});
 }
@@ -205,6 +207,27 @@ function completeSession() {
 	switchView("summary");
 }
 
+function startBreak() {
+	isOnBreak = true;
+	pauseTimer();
+	showBreakView(5 * 60); // 5 minutes
+}
+
+function endBreak() {
+	isOnBreak = false;
+	if (window.breakInterval) {
+		clearInterval(window.breakInterval);
+		window.breakInterval = null;
+	}
+
+	// Send resume message to background
+	chrome.runtime.sendMessage({ action: "resumeSession" });
+
+	// Switch back to active view and resume timer
+	switchView("active");
+	resumeTimer();
+}
+
 function resetToSetup() {
 	goalInput.value = "";
 	startBtn.disabled = true;
@@ -215,13 +238,23 @@ function resetToSetup() {
 function switchView(view) {
 	setupView.style.display = view === "setup" ? "block" : "none";
 	activeView.style.display = view === "active" ? "block" : "none";
+	document.getElementById("breakView").style.display =
+		view === "break" ? "block" : "none";
 	summaryView.style.display = view === "summary" ? "block" : "none";
 	currentView = view;
 }
 
 function loadState() {
 	chrome.storage.local.get(
-		["isActive", "goal", "duration", "endTime", "blockedListText"],
+		[
+			"isActive",
+			"goal",
+			"duration",
+			"endTime",
+			"blockedListText",
+			"isOnBreak",
+			"breakEndTime",
+		],
 		(data) => {
 			if (blockedInput) {
 				blockedInput.value = data.blockedListText || "";
@@ -231,9 +264,49 @@ function loadState() {
 				sessionGoal = data.goal;
 				sessionDuration = data.duration;
 				timeRemaining = Math.floor((data.endTime - Date.now()) / 1000);
-				switchView("active");
-				startTimer();
+
+				// Check if we're on a break
+				if (data.isOnBreak && data.breakEndTime > Date.now()) {
+					isOnBreak = true;
+					// Calculate remaining break time
+					const breakTimeRemaining = Math.floor(
+						(data.breakEndTime - Date.now()) / 1000
+					);
+					showBreakView(breakTimeRemaining);
+				} else {
+					switchView("active");
+					startTimer();
+				}
 			}
 		}
 	);
+}
+
+function showBreakView(breakTimeRemaining) {
+	const breakTimerDisplay = document.getElementById("breakTimerDisplay");
+	switchView("break");
+
+	// Update display immediately
+	const mins = Math.floor(breakTimeRemaining / 60);
+	const secs = breakTimeRemaining % 60;
+	breakTimerDisplay.textContent = `${mins}:${secs
+		.toString()
+		.padStart(2, "0")}`;
+
+	const breakInterval = setInterval(() => {
+		breakTimeRemaining--;
+		const mins = Math.floor(breakTimeRemaining / 60);
+		const secs = breakTimeRemaining % 60;
+		breakTimerDisplay.textContent = `${mins}:${secs
+			.toString()
+			.padStart(2, "0")}`;
+
+		if (breakTimeRemaining <= 0) {
+			clearInterval(breakInterval);
+			endBreak();
+		}
+	}, 1000);
+
+	// Store interval ID for cleanup
+	window.breakInterval = breakInterval;
 }
