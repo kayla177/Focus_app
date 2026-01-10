@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Mode</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 Focus Mode</h1>
+    
+    <!-- Setup View -->
+    <div id="setupView">
+      <div class="input-section">
+        <label>Focus on this website:</label>
+        <input 
+          type="text" 
+          id="siteInput" 
+          placeholder="e.g., learn.uwaterloo.ca"
+        >
+        <button id="addSiteBtn" class="small-btn">+ Add Another Site</button>
+      </div>
+
+      <div class="sites-list" id="allowedSitesList">
+        <!-- Allowed sites will appear here -->
+      </div>
+
+      <div class="duration-section">
+        <label>Focus duration:</label>
+        <div class="duration-buttons">
+          <button class="duration-btn" data-minutes="25">25m</button>
+          <button class="duration-btn" data-minutes="45">45m</button>
+          <button class="duration-btn active" data-minutes="60">1h</button>
+          <button class="duration-btn" data-minutes="120">2h</button>
+        </div>
+        <div class="custom-duration">
+          <input type="number" id="customMinutes" min="1" max="480" placeholder="Custom">
+          <span>minutes</span>
+        </div>
+      </div>
+
+      <button id="startBtn" class="primary-btn">🚀 Start Focus Session</button>
+      
+      <p class="info-text">⚠️ All other websites will be blocked during your session!</p>
+    </div>
+
+    <!-- Active Session View -->
+    <div id="activeView" style="display: none;">
+      <div class="timer-display">
+        <div class="timer-label">Time Remaining</div>
+        <div id="timerText" class="timer-text">60:00</div>
+      </div>
+      
+      <div class="focus-sites">
+        <p>Focusing on:</p>
+        <ul id="focusSitesList"></ul>
+      </div>
+
+      <button id="endBtn" class="danger-btn">End Session Early</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
