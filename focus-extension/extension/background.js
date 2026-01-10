@@ -126,7 +126,7 @@ function showFocusNotification(title, message) {
   // Throttle: max one notification every 5 seconds
   if (now - lastNotificationTime < 5000) return;
   lastNotificationTime = now;
-  
+
   const notificationId = 'focus-alert-' + now;
   chrome.notifications.create(notificationId, {
     type: 'basic',

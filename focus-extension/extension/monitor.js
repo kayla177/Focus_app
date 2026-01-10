@@ -17,7 +17,7 @@ class FocusMonitor {
     this.calibrationOverlay = document.getElementById('calibrationOverlay');
     this.calibrationGrid = document.getElementById('calibrationGrid');
     this.calibrationInstructions = document.getElementById('calibrationInstructions');
-    
+
     // Stat elements
     this.focusScoreEl = document.getElementById('focusScore');
     this.scoreProgress = document.getElementById('scoreProgress');
@@ -30,13 +30,13 @@ class FocusMonitor {
     this.distractedTimeEl = document.getElementById('distractedTime');
     this.distractionCountEl = document.getElementById('distractionCount');
     this.timeline = document.getElementById('timeline');
-    
+
     // Buttons
     this.startBtn = document.getElementById('startBtn');
     this.stopBtn = document.getElementById('stopBtn');
     this.calibrateBtn = document.getElementById('calibrateBtn');
     this.pipBtn = document.getElementById('pipBtn');
-    
+
     // WebGazer
     this.wgReady = false;
 
@@ -44,19 +44,19 @@ class FocusMonitor {
     const params = new URLSearchParams(location.search);
     this.debugEnabled = params.has('debug') || localStorage.getItem('focusMonitorDebug') === '1';
     this.lastDebugLog = 0;
-    
+
     // Settings
     this.alertDelay = 3;
     this.soundEnabled = true;
     this.sensitivity = 'medium';
-    
+
     // State
     this.isRunning = false;
     this.animationFrame = null;
-    
+
     // Gaze smoothing
     this.gazeHistory = [];
-    
+
     // Tracking metrics
     this.sessionStart = null;
     this.focusedMs = 0;
@@ -74,11 +74,11 @@ class FocusMonitor {
     this.calibrationPoints = [];
     this.calibrationIndex = 0;
     this.calibrationSamples = 0;
-    
+
     // Timeline data
     this.timelineData = [];
     this.lastTimelineUpdate = Date.now();
-    
+
     // Audio
     this.alertSound = this.createAlertSound();
 
@@ -92,16 +92,16 @@ class FocusMonitor {
     this.headBaseline = null;
     this.headBaselineFrames = [];
     this.isCapturingHeadBaseline = false;
-    
+
     this.init();
   }
-  
+
   init() {
     // Event listeners
     this.startBtn.addEventListener('click', () => this.start());
     this.stopBtn.addEventListener('click', () => this.stop());
     this.calibrateBtn?.addEventListener('click', () => this.startCalibration());
-    
+
     // PiP Pop-out
     this.pipBtn?.addEventListener('click', async () => {
       if (document.pictureInPictureElement) {
@@ -122,7 +122,7 @@ class FocusMonitor {
     document.getElementById('sensitivity')?.addEventListener('change', e => {
       this.sensitivity = e.target.value;
     });
-    
+
     this.setStatus('Ready', '');
     console.log('[FocusMonitor] Initialized');
     if (this.debugEnabled) {
@@ -202,7 +202,7 @@ class FocusMonitor {
       this.stopBtn.disabled = false;
       this.calibrateBtn.disabled = false;
       if (this.pipBtn) this.pipBtn.disabled = false;
-      
+
       // Start PiP stream
       if (this.canvas) {
         const stream = this.canvas.captureStream(30);
@@ -223,28 +223,28 @@ class FocusMonitor {
       this.headBaselineFrames = [];
       this.isCapturingHeadBaseline = true;
       this.headBaselineStartTime = Date.now();
-      
+
     } catch (err) {
       console.error('[FocusMonitor] Error:', err);
       this.setStatus('Camera error: ' + err.message, 'error');
     }
   }
-  
+
   stop() {
     this.isRunning = false;
-    
+
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
     }
-    
+
     if (typeof webgazer !== 'undefined') {
       webgazer.pause();
     }
-    
+
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.faceBox.style.display = 'none';
     this.hideAlert();
-    
+
     this.startBtn.disabled = false;
     this.stopBtn.disabled = true;
     this.calibrateBtn.disabled = false;
@@ -253,10 +253,10 @@ class FocusMonitor {
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});
     }
-    
+
     this.setStatus('Stopped', '');
   }
-  
+
   detect() {
     if (!this.isRunning) return;
 
@@ -265,7 +265,7 @@ class FocusMonitor {
 
     // Update stats
     this.updateStats();
-    
+
     this.animationFrame = requestAnimationFrame(() => this.detect());
   }
 
