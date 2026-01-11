@@ -176,6 +176,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // Focus notification with sound (works in background)
 let lastNotificationTime = 0;
 function showFocusNotification(title, message) {
+	console.log("entered notification")
   const now = Date.now();
   // Throttle: max one notification every 5 seconds
   if (now - lastNotificationTime < 5000) return;
@@ -210,3 +211,44 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     });
   }
 });
+
+let lastAnalyzeAt = 0;
+const ANALYZE_EVERY_MS = 2500;
+
+async function analyzeFrame({ dataUrl, ts, tabId }) {
+  const now = Date.now();
+  if (now - lastAnalyzeAt < ANALYZE_EVERY_MS) return;
+  lastAnalyzeAt = now;
+
+  const tab = await chrome.tabs.get(tabId);
+  const payload = {
+    goal: sessionGoal,
+    url: tab?.url || "",
+    title: tab?.title || "",
+    ts,
+    screenshotDataUrl: dataUrl,
+  };
+
+  const res = await fetch("http://localhost:3001/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json();
+  if (!json.ok) {
+    console.warn("analyze failed:", json.error);
+    return;
+  }
+
+  const v = json.verdict;
+  console.log("verdict:", v);
+
+  if (v.distracted && v.suggested_action !== "none") {
+	console.log("entered! sendmsg")
+    monitorAlertCount++;
+	updateStreak();
+	// Show Chrome notification for focus alerts (works even when monitor tab not focused)
+	showFocusNotification("Focus alert!", "You seem distracted!");
+  }
+}
