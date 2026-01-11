@@ -17,17 +17,36 @@ if (mode === "nudge") {
   breakBtn.textContent = "1 more min";
 }
 
+// Speak distraction alert when page loads
+if (window.FocusVoice && typeof window.FocusVoice.speakDistraction === 'function') {
+  // Wait a bit for page to load and TTS to initialize
+  setTimeout(() => {
+    window.FocusVoice.speakDistraction();
+  }, 500);
+}
+
 document.getElementById("backBtn").addEventListener("click", async () => {
   // Return to focus
   chrome.runtime.sendMessage({ action: "NUDGE_RETURN_TO_FOCUS" });
 
-  // also close this tab
-	try {
-	const w = await chrome.windows.getCurrent();
-	if (w?.id) chrome.windows.remove(w.id);
-	} catch (_) {}
-
+  // Close the UI correctly depending on how it was opened:
+  try {
+    if (mode === "nudge") {
+      // nudge is opened as a separate popup window -> safe to close the window
+      const w = await chrome.windows.getCurrent();
+      if (w?.id) await chrome.windows.remove(w.id);
+    } else {
+      // blocked page is in a normal tab -> ONLY close that tab (not the whole window)
+      const t = await chrome.tabs.getCurrent();
+      if (t?.id) await chrome.tabs.remove(t.id);
+      else window.close(); // fallback
+    }
+  } catch (e) {
+    // fallback if the API fails
+    window.close();
+  }
 });
+
 
 document.getElementById("breakBtn").addEventListener("click", async () => {
   if (mode === "nudge") {
