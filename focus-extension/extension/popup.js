@@ -218,10 +218,15 @@ function completeSession() {
 	if (timerInterval) clearInterval(timerInterval);
 
 	chrome.storage.local.set({ isActive: false });
-	chrome.runtime.sendMessage({ action: "endSession" }, (stats) => {
-		// Stats come back from background.js
-		const alerts = stats?.monitorAlertCount || 0;
-		const longestStreakMs = stats?.longestFocusStreakMs || 0;
+	
+	// Add 50ms delay to ensure background has time to finalize stats
+	setTimeout(() => {
+		chrome.runtime.sendMessage({ action: "endSession" }, (response) => {
+			// Stats come back from background.js
+			console.log('[completeSession] received response:', response);
+			const stats = response || {};
+			const alerts = stats?.monitorAlertCount || 0;
+			const longestStreakMs = stats?.longestFocusStreakMs || 0;
 
 		// Calculate actual session time (how long they actually ran it)
 		chrome.storage.local.get(["startTime"], (storage) => {
@@ -238,71 +243,62 @@ function completeSession() {
 			// Populate Summary
 			document.getElementById("summaryGoal").textContent = sessionGoal;
 
-			// Populate actual summary
+			// Calculate and display stats (ALWAYS, regardless of fetch success)
+			const totalDistractions = stats?.monitorAlertCount ?? 0;
+			const distractionRate = totalDistractions / actualSessionMinutes;
+			console.log(`Distractions: ${totalDistractions}, rate: ${distractionRate.toFixed(2)} per minute`);
+
+			// Scoring: start at 100, subtract 25 points per distraction per minute
+			let focusScore;
+			if (totalDistractions === 0) {
+				focusScore = 100;
+			} else {
+				const penalty = distractionRate * 25;
+				focusScore = Math.max(0, 100 - penalty);
+			}
+
+			console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
+
+			const clampedScore = Math.max(
+				0,
+				Math.min(100, Math.round(focusScore))
+			);
+			document.getElementById("focusScore").textContent = `${clampedScore}%`;
+			const focusProgress = document.getElementById("focusProgress");
+			if (focusProgress)
+				focusProgress.style.width = `${clampedScore}%`;
+
+			// Longest Stretch from start tracker
+			document.getElementById("longestStretch").textContent = streakText;
+
+			// Distractions (Beeps)
+			document.getElementById("distractionCount").textContent = totalDistractions;
+
+			// Try to fetch AI summary (optional, won't block stats display)
 			fetch("http://localhost:3001/summarize-session", { method: "POST" })
             .then(response => {
                 if (!response.ok) throw new Error("Network response was not ok");
-                return response.json(); // 2. Parse the JSON and pass it to the next .then
+                return response.json();
             })
             .then(res => {
 				console.log(res)
-				if (!res.ok) {
-					console.warn("analyze failed:", res.error);
-					return;
-				}
-				document.getElementById("workSummary").innerText = res.report
-
-				// Use start focus tracker (background stats) as single source of truth
-				const totalDistractions = stats?.monitorAlertCount ?? 0;
-				const distractionRate = totalDistractions / actualSessionMinutes;
-				console.log(`Distractions: ${totalDistractions}, rate: ${distractionRate.toFixed(2)} per minute`);
-
-				// Scoring: start at 100, subtract 25 points per distraction per minute
-				// Examples:
-				// 0 distractions -> 100%
-				// 1 distraction in 10 min -> 97.5%
-				// 1 distraction in 2 min  -> 87.5%
-				// 2 distractions in 2 min -> 75%
-				// 2 distractions in 1 min -> 50%
-				let focusScore;
-				if (totalDistractions === 0) {
-					focusScore = 100;
+				if (res.ok && res.report) {
+					document.getElementById("workSummary").innerText = res.report;
 				} else {
-					const penalty = distractionRate * 25;
-					focusScore = Math.max(0, 100 - penalty);
+					console.warn("analyze failed:", res.error);
+					document.getElementById("workSummary").textContent = "Could not load summary.";
 				}
-
-				console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
-
-				const clampedScore = Math.max(
-					0,
-					Math.min(100, Math.round(focusScore))
-				);
-				document.getElementById(
-					"focusScore"
-				).textContent = `${clampedScore}%`;
-				const focusProgress = document.getElementById("focusProgress");
-				if (focusProgress)
-					focusProgress.style.width = `${clampedScore}%`;
-
-				// Longest Stretch from start tracker
-				const finalStreakText = streakText;
-				document.getElementById("longestStretch").textContent =
-					finalStreakText;
-
-				// Distractions (Beeps)
-				document.getElementById("distractionCount").textContent =
-					totalDistractions;
-
-				switchView("summary");
 			}).catch(error => {
-                // 4. Handle errors so the extension doesn't freeze
+                // Fetch failed - AI summary unavailable, but stats already displayed
                 console.error("Error fetching summary:", error);
                 document.getElementById("workSummary").textContent = "Could not load summary.";
-                switchView("summary");
             });
+
+			// Switch to summary view (don't wait for fetch)
+			switchView("summary");
 		});
-	});
+		});
+	}, 50);
 }
 
 function startBreak() {
