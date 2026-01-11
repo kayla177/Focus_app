@@ -1,17 +1,13 @@
 import "dotenv/config";
 import express from "express";
-import { OpenRouter } from '@openrouter/sdk';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 app.use(express.json({ limit: "15mb" })); // screenshots are big
-let sessionLogs = []  // Global session log list
+let sessionLogs = []; // Global session log list
 
-const openRouter = new OpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': 'http://localhost:3001', // Optional. Site URL for rankings on openrouter.ai.
-  },
-});
+// Initialize Google Generative AI with your API Key
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function guessMimeFromBase64(b64) {
   const head = b64.slice(0, 30);
@@ -21,13 +17,17 @@ function guessMimeFromBase64(b64) {
   return "image/webp";
 }
 
-function toDataUrl(input) {
-  if (typeof input !== "string") return "";
-  if (input.startsWith("data:image/")) return input;
-
+// Helper to extract raw base64 and mime type for Google API
+function parseBase64(input) {
+  if (typeof input !== "string") return null;
   const b64 = input.includes("base64,") ? input.split("base64,")[1] : input;
-  const mime = guessMimeFromBase64(b64);
-  return `data:${mime};base64,${b64}`;
+  const mimeType = guessMimeFromBase64(b64);
+  return {
+    inlineData: {
+      data: b64,
+      mimeType
+    }
+  };
 }
 
 app.get("/ping", (_req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -39,9 +39,12 @@ app.post("/analyze", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing goal or screenshotDataUrl" });
     }
 
-    const imageUrl = toDataUrl(String(screenshotDataUrl));
+    const imageData = parseBase64(String(screenshotDataUrl));
 
-    const system = `
+    // Initialize the Gemma model as requested
+    const model = genAI.getGenerativeModel({ model: "models/gemma-3-27b-it" });
+
+    const systemInstruction = `
 You are Anchor, a focus coach. Decide if the user's current screen is aligned with their goal.
 Return ONLY valid JSON with keys:
 - distracted: boolean
@@ -51,7 +54,9 @@ Return ONLY valid JSON with keys:
 - categories: string[]
 `;
 
-    const user = `
+    const prompt = `
+${systemInstruction}
+
 GOAL: ${goal}
 URL: ${url ?? ""}
 TITLE: ${title ?? ""}
@@ -59,48 +64,22 @@ TIME: ${ts ?? Date.now()}
 Assess whether the screen content is helping the goal.
 `;
 
-    const completion = await openRouter.chat.send({
-      model: 'google/gemini-2.0-flash-001',
-      messages: [
-        {
-          role: "system",
-          content: [
-            {
-              type: 'text',
-              text: system,
-            }
-          ]
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: user,
-            },
-            {
-              type: 'image_url',
-              imageUrl: {
-                url: imageUrl,
-              },
-            },
-          ],
-        },
-      ],
-      stream: false,
-    });
+    // Google API uses a parts array for multimodal input
+    const result = await model.generateContent([prompt, imageData]);
+    const response = await result.response;
+    const outText = response.text();
 
-    const outText = completion.choices[0].message.content ?? "";
-    if (!outText) return res.status(500).json({ ok: false, error: "No output_text from model" });
-    
+    if (!outText) return res.status(500).json({ ok: false, error: "No output from model" });
+
     let verdict;
     try {
-      // CLEANUP: specific fix for VLMs that wrap output in markdown code blocks
-      const cleanJson = outText.replace(/```json|```/g, '').trim(); 
+      // Clean markdown formatting if the model includes it
+      const cleanJson = outText.replace(/```json|```/g, '').trim();
       verdict = JSON.parse(cleanJson);
     } catch (e) {
-      return res.status(500).json({ ok: false, error: "Invalid JSON from VLM" });
+      return res.status(500).json({ ok: false, error: "Invalid JSON from model" });
     }
+
     // Add entry to session log
     sessionLogs.push({
       timestamp: ts ?? Date.now(),
@@ -118,26 +97,28 @@ app.post("/summarize-session", async (req, res) => {
   try {
     if (sessionLogs.length === 0) return res.json({ ok: true, report: "No data captured." });
 
+    // Initialize the Gemini 2.5 Flash model as requested
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
     const summaryPrompt = `
       Below is a log of user activities and focus verdicts. 
       Generate a concise "Deep Work Report" in under 70 words, summarizing their focus levels, 
       main distractions, and overall productivity. 
       Then, use point forms to randomly point out 5 times where on_track was equal to False. 
       The point form should include time_stamp of that entry and the reason. The time_stamp should be hours:minutes:seconds, determined by the unix timestamp given.
-      If there are less than 5 points, output that number of points. If there are no instances, don't outpput pointform. 
+      If there are less than 5 points, output that number of points. If there are no instances, don't output pointform. 
       Do not output any other information, including markdown, code.
       LOGS: ${JSON.stringify(sessionLogs)}
     `;
 
-    const reportResp = await openRouter.chat.send({ // Corrected to chat completion
-      model: "google/gemini-3-flash-preview",
-      messages: [{ role: "user", content: summaryPrompt }],
-      stream: false,
-    });
-    sessionLogs.length = 0
-    return res.json({ ok: true, report: reportResp.choices[0].message.content });
+    const result = await model.generateContent(summaryPrompt);
+    const response = await result.response;
+    const reportText = response.text();
+
+    sessionLogs.length = 0; // Clear logs after summary
+    return res.json({ ok: true, report: reportText });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e) });
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
 });
 
