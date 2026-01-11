@@ -7,6 +7,9 @@ let monitorAlertCount = 0; // Camera/Focus Monitor alerts
 let isOnBreak = false;
 let breakEndTime = null;
 
+let latestFrame = null; // { ts, tabId, dataUrl } — for now keep last only
+let offscreenIsReady = false;
+
 // Metrics
 let sessionStartTime = 0;
 let lastDistractionTime = 0;
@@ -32,14 +35,123 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		takeBreak();
 	} else if (request.action === "resumeSession") {
 		resumeSession();
-	} else if (request.type === "FOCUS_ALERT") {
+	} else if (request.action === "offscreenReady"){
+		offscreenIsReady = true;
+		if (offscreenReadyResolve) offscreenReadyResolve();
+		sendResponse?.({ ok: true });
+		return;
+	} else if (request.action === "captureFrame"){
+		latestFrame = { ts: request.ts, tabId: request.tabId, dataUrl: request.dataUrl };
+		analyzeFrame(latestFrame).catch(console.warn);
+		console.log("frame", latestFrame.ts, latestFrame.dataUrl?.slice(0, 50));
+	} else if (request.action === "captureError") {
+    	console.warn("Capture error:", request.message);
+  	} else if (request.type === "FOCUS_ALERT") {
 		monitorAlertCount++;
 		updateStreak();
 		// Show Chrome notification for focus alerts (works even when monitor tab not focused)
 		showFocusNotification(request.title, request.message);
+	} else if (request.type === "getLatestFrame"){
+		sendResponse({ ok: true, frame: latestFrame });
+    	return true; // IMPORTANT: keeps the message channel open for async SW
 	}
 	return true;
 });
+
+// background.js
+
+async function startCaptureLoop() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab) return console.error("No active tab");
+
+  // 1. Get the Stream ID (Standard)
+  chrome.desktopCapture.chooseDesktopMedia(
+    ["screen", "window", "tab"],
+    tab,
+    async (streamId) => {
+      if (!streamId) return console.error("User cancelled");
+
+      // 2. FORCE INJECT the content script to ensure it's there
+      // This solves "Receiving end does not exist" on tabs that haven't been reloaded
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ["content_capture.js"],
+        });
+        
+        console.log("Script injected. Sending stream ID...");
+
+        // 3. Send the message now that we know the script is ready
+        // We add a small delay to ensure the listener is registered
+        setTimeout(() => {
+            chrome.tabs.sendMessage(tab.id, {
+                action: "START_CAPTURE",
+                streamId: streamId,
+                tabId: tab.id
+            }).catch(err => console.error("Message failed:", err));
+        }, 100);
+
+      } catch (err) {
+        console.error("Could not inject script (Are you on a restricted page like chrome:// or a PDF?):", err);
+      }
+    }
+  );
+}
+
+function stopCaptureLoop() {
+  // Notify all tabs to stop capturing (simplified)
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach(t => chrome.tabs.sendMessage(t.id, { action: "STOP_CAPTURE" }).catch(() => {}));
+  });
+}
+
+function waitForOffscreenReady(timeoutMs = 5000) {
+  if (offscreenIsReady) return Promise.resolve(true); // ✅ key line
+  if (offscreenReadyPromise) return offscreenReadyPromise;
+
+  offscreenReadyPromise = new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      offscreenReadyPromise = null;
+      offscreenReadyResolve = null;
+      reject(new Error("Offscreen did not become ready in time"));
+    }, timeoutMs);
+
+    offscreenReadyResolve = () => {
+      clearTimeout(t);
+      resolve(true);
+    };
+  });
+
+  return offscreenReadyPromise;
+}
+
+async function ensureOffscreen() {
+  if (!chrome.offscreen?.createDocument) {
+    throw new Error("chrome.offscreen is not available. Check manifest permissions + reload extension.");
+  }
+
+  // Prefer runtime contexts check when available
+  if (chrome.runtime?.getContexts) {
+    const contexts = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
+    if (contexts.length > 0) return;
+  } else if (chrome.offscreen?.hasDocument) {
+    if (await chrome.offscreen.hasDocument()) return;
+  }
+
+  // reset promise each time we create
+offscreenIsReady = false;
+offscreenReadyPromise = null;
+offscreenReadyResolve = null;
+
+  await chrome.offscreen.createDocument({
+    url: "offscreen.html",
+    reasons: ["USER_MEDIA"],
+    justification: "Capture focused tab frames during an active focus session"
+  });
+
+  // wait until offscreen.js runs and announces readiness
+  await waitForOffscreenReady();
+}
 
 function startSession(goal, duration, blocked) {
 	isSessionActive = true;
@@ -52,6 +164,7 @@ function startSession(goal, duration, blocked) {
 	longestFocusStreakMs = 0;
 
 	chrome.alarms.create("sessionEnd", { delayInMinutes: duration });
+	startCaptureLoop();
 }
 
 function endSession() {
@@ -90,7 +203,7 @@ function endSession() {
 			chrome.tabs.remove(tabsToClose.map((t) => t.id));
 		}
 	});
-
+	stopCaptureLoop();
 	return stats;
 }
 
