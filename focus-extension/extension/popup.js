@@ -238,49 +238,69 @@ function completeSession() {
 			// Populate Summary
 			document.getElementById("summaryGoal").textContent = sessionGoal;
 
-			// Use start focus tracker (background stats) as single source of truth
-			const totalDistractions = stats?.monitorAlertCount ?? 0;
-			const distractionRate = totalDistractions / actualSessionMinutes;
-			console.log(`Distractions: ${totalDistractions}, rate: ${distractionRate.toFixed(2)} per minute`);
+			// Populate actual summary
+			fetch("http://localhost:3001/summarize-session", { method: "POST" })
+            .then(response => {
+                if (!response.ok) throw new Error("Network response was not ok");
+                return response.json(); // 2. Parse the JSON and pass it to the next .then
+            })
+            .then(res => {
+				console.log(res)
+				if (!res.ok) {
+					console.warn("analyze failed:", res.error);
+					return;
+				}
+				document.getElementById("workSummary").innerText = res.report
 
-			// Scoring: start at 100, subtract 25 points per distraction per minute
-			// Examples:
-			// 0 distractions -> 100%
-			// 1 distraction in 10 min -> 97.5%
-			// 1 distraction in 2 min  -> 87.5%
-			// 2 distractions in 2 min -> 75%
-			// 2 distractions in 1 min -> 50%
-			let focusScore;
-			if (totalDistractions === 0) {
-				focusScore = 100;
-			} else {
-				const penalty = distractionRate * 25;
-				focusScore = Math.max(0, 100 - penalty);
-			}
+				// Use start focus tracker (background stats) as single source of truth
+				const totalDistractions = stats?.monitorAlertCount ?? 0;
+				const distractionRate = totalDistractions / actualSessionMinutes;
+				console.log(`Distractions: ${totalDistractions}, rate: ${distractionRate.toFixed(2)} per minute`);
 
-			console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
+				// Scoring: start at 100, subtract 25 points per distraction per minute
+				// Examples:
+				// 0 distractions -> 100%
+				// 1 distraction in 10 min -> 97.5%
+				// 1 distraction in 2 min  -> 87.5%
+				// 2 distractions in 2 min -> 75%
+				// 2 distractions in 1 min -> 50%
+				let focusScore;
+				if (totalDistractions === 0) {
+					focusScore = 100;
+				} else {
+					const penalty = distractionRate * 25;
+					focusScore = Math.max(0, 100 - penalty);
+				}
 
-			const clampedScore = Math.max(
-				0,
-				Math.min(100, Math.round(focusScore))
-			);
-			document.getElementById(
-				"focusScore"
-			).textContent = `${clampedScore}%`;
-			const focusProgress = document.getElementById("focusProgress");
-			if (focusProgress)
-				focusProgress.style.width = `${clampedScore}%`;
+				console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
 
-			// Longest Stretch from start tracker
-			const finalStreakText = streakText;
-			document.getElementById("longestStretch").textContent =
-				finalStreakText;
+				const clampedScore = Math.max(
+					0,
+					Math.min(100, Math.round(focusScore))
+				);
+				document.getElementById(
+					"focusScore"
+				).textContent = `${clampedScore}%`;
+				const focusProgress = document.getElementById("focusProgress");
+				if (focusProgress)
+					focusProgress.style.width = `${clampedScore}%`;
 
-			// Distractions (Beeps)
-			document.getElementById("distractionCount").textContent =
-				totalDistractions;
+				// Longest Stretch from start tracker
+				const finalStreakText = streakText;
+				document.getElementById("longestStretch").textContent =
+					finalStreakText;
 
-			switchView("summary");
+				// Distractions (Beeps)
+				document.getElementById("distractionCount").textContent =
+					totalDistractions;
+
+				switchView("summary");
+			}).catch(error => {
+                // 4. Handle errors so the extension doesn't freeze
+                console.error("Error fetching summary:", error);
+                document.getElementById("workSummary").textContent = "Could not load summary.";
+                switchView("summary");
+            });
 		});
 	});
 }

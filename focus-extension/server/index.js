@@ -123,7 +123,8 @@ app.post("/summarize-session", async (req, res) => {
       Generate a concise "Deep Work Report" in under 70 words, summarizing their focus levels, 
       main distractions, and overall productivity. 
       Then, use point forms to randomly point out 5 times where on_track was equal to False. 
-      The point form should include time_stamp of that entry and the reason.
+      The point form should include time_stamp of that entry and the reason. The time_stamp should be hours:minutes:seconds, determined by the unix timestamp given.
+      If there are less than 5 points, output that number of points. If there are no instances, don't outpput pointform. 
       Do not output any other information, including markdown, code.
       LOGS: ${JSON.stringify(sessionLogs)}
     `;
@@ -133,10 +134,10 @@ app.post("/summarize-session", async (req, res) => {
       messages: [{ role: "user", content: summaryPrompt }],
       stream: false,
     });
-
-    res.json({ ok: true, report: reportResp.choices[0].message.content });
+    sessionLogs.length = 0
+    return res.json({ ok: true, report: reportResp.choices[0].message.content });
   } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
