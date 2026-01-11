@@ -379,14 +379,14 @@ function isHostBlocked(hostname, blockedList) {
 
 // ----- Blocking on navigation -----
 chrome.webNavigation.onCommitted.addListener((details) => {
-  if (!isSessionActive || details.frameId !== 0) return;
+	if (!isSessionActive || details.frameId !== 0) return;
 
-  let url;
-  try {
-    url = new URL(details.url);
-  } catch (_) {
-    return;
-  }
+	let url;
+	try {
+		url = new URL(details.url);
+	} catch (_) {
+		return;
+	}
 
   if (url.protocol.startsWith("chrome")) return;
 
@@ -406,8 +406,15 @@ chrome.webNavigation.onCommitted.addListener((details) => {
         details.url
       )}`;
 
-    chrome.tabs.update(details.tabId, { url: blockedUrl });
-  }
+		// IMPORTANT: Next export blocked page path
+		const blockedUrl =
+			chrome.runtime.getURL("blocked/index.html") +
+			`?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(
+				details.url
+			)}`;
+
+		chrome.tabs.update(details.tabId, { url: blockedUrl });
+	}
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {

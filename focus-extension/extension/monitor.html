@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Monitor</title>
+  <link rel="stylesheet" href="monitor.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <h1>🎯 Focus Monitor</h1>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span class="status-text">Ready</span>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Floating Mini Indicator (shown when camera hidden) -->
+      <div class="mini-indicator" id="miniIndicator">
+        <div class="mini-status" id="miniStatus"></div>
+        <span class="mini-label">Focus</span>
+        <button class="mini-expand-btn" id="miniExpandBtn" title="Expand camera">⬆</button>
+      </div>
+
+      <!-- Video Section -->
+      <div class="video-section" id="videoSection">
+        <div class="video-container" id="videoContainer">
+          <!-- We now render everything to the canvas (video + text) -->
+          <canvas id="overlay"></canvas>
+          <!-- Hidden pip source -->
+          <video id="pipVideo" autoplay playsinline muted style="width: 1px; height: 1px; opacity: 0; position: absolute; pointer-events: none;"></video>
+          <!-- Webgazer target (mirrored but hidden) -->
+          <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+
+
+          <!-- Face indicator -->
+          <div class="face-box" id="faceBox"></div>
+
+          <!-- Alert overlay -->
+          <div class="alert-overlay" id="alertOverlay">
+            <div class="alert-content">
+              <span class="alert-icon">👀</span>
+              <span class="alert-text">Look at your screen!</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="camera-controls">
+          <button id="startBtn" class="control-btn primary">
+            <span>📷</span> Start Monitoring
+          </button>
+          <button id="stopBtn" class="control-btn danger" disabled>
+            <span>⏹</span> Stop
+          </button>
+          <button id="calibrateBtn" class="control-btn">
+            <span>🎯</span> Calibrate
+          </button>
+          <button id="pipBtn" class="control-btn" disabled>
+            <span>📺</span> Pop-out
+          </button>
+          <button id="minimizeBtn" class="control-btn" disabled>
+            <span>➖</span> Minimize
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats Panel -->
+      <div class="stats-panel">
+
+          <div class="score-ring">
+            <svg viewBox="0 0 100 100">
+              <circle class="score-bg" cx="50" cy="50" r="45"/>
+              <circle class="score-progress" id="scoreProgress" cx="50" cy="50" r="45"/>
+            </svg>
+            <div class="score-value">
+              <span id="focusScore">100</span>
+              <span class="score-label">%</span>
+            </div>
+          </div>
+          <div class="stat-title">Focus Score</div>
+        </div>
+
+        <!-- Current Status -->
+        <div class="stat-card">
+          <div class="stat-grid">
+            <div class="stat-item">
+              <span class="stat-label">Status</span>
+              <span class="stat-value" id="attentionStatus">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Head Position</span>
+              <span class="stat-value" id="headPosition">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Face Detected</span>
+              <span class="stat-value" id="faceDetected">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Confidence</span>
+              <span class="stat-value" id="confidence">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session Stats -->
+        <div class="stat-card">
+          <div class="stat-header">📊 Session Stats</div>
+          <div class="stat-grid">
+            <div class="stat-item">
+              <span class="stat-label">Session Time</span>
+              <span class="stat-value" id="sessionTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Focused Time</span>
+              <span class="stat-value" id="focusedTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Distracted Time</span>
+              <span class="stat-value" id="distractedTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Distractions</span>
+              <span class="stat-value" id="distractionCount">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="stat-card">
+          <div class="stat-header">📈 Attention Timeline</div>
+          <div class="timeline" id="timeline"></div>
+        </div>
+
+        <!-- Settings -->
+        <div class="stat-card">
+          <div class="stat-header">⚙️ Settings</div>
+          <div class="settings-grid">
+            <div class="setting-item">
+              <label for="alertDelay">Alert after (seconds)</label>
+              <input type="number" id="alertDelay" value="3" min="1" max="30">
+            </div>
+            <div class="setting-item">
+              <label for="soundEnabled">Sound alerts</label>
+              <input type="checkbox" id="soundEnabled" checked>
+            </div>
+            <div class="setting-item">
+              <label for="sensitivity">Sensitivity</label>
+              <select id="sensitivity">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Fullscreen calibration overlay -->
+  <div class="calibration-overlay" id="calibrationOverlay">
+    <div class="calibration-grid" id="calibrationGrid"></div>
+    <div class="calibration-instructions" id="calibrationInstructions">Look at each dot and click it to calibrate</div>
+  </div>
+
+  <script src="libs/webgazer.js"></script>
+  <script src="config.js"></script>
+  <script src="tts.js"></script>
+  <script src="monitor.js"></script>
+</body>
+</html>

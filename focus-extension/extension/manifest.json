@@ -22,7 +22,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["blocked/index.html", "next-assets/*"],
+      "resources": ["blocked/index.html", "next-assets/*", "monitor.html", "monitor.css", "monitor.js", "mini-monitor.html", "mini-monitor.js", "libs/*"],
       "matches": ["<all_urls>"]
     }
   ]

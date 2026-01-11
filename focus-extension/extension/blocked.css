@@ -105,3 +105,28 @@ h1 {
 .secondary-btn:hover {
   background: #e2e8f0;
 }
+
+.break-timer {
+  font-size: 72px;
+  font-weight: 700;
+  color: #14b8a6;
+  font-family: 'Monaco', 'Courier New', monospace;
+  letter-spacing: 8px;
+  margin: 32px 0;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.hint {
+  color: #64748b;
+  font-size: 14px;
+  margin-top: 16px;
+}

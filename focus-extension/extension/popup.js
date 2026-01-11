@@ -294,6 +294,12 @@ async function startSession() {
   }
 }
 
+function pauseTimer() {
+	if (timerInterval !== null) {
+		clearInterval(timerInterval);
+		timerInterval = null;
+	}
+}
 
 function pauseSession() {
 	// Check if this is being called due to a break (from blocked page)
