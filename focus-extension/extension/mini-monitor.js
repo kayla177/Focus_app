@@ -250,7 +250,13 @@ class MiniMonitor {
       const distractedFor = (now - this.distractedSince) / 1000;
       if (distractedFor >= this.alertDelay && !this.isAlertShowing) {
         this.isAlertShowing = true;
-        this.alertSound.play();
+        
+        if (window.FocusVoice) {
+          window.FocusVoice.speakDistraction();
+        } else {
+          this.alertSound.play();
+        }
+
         // Send notification via background
         chrome.runtime?.sendMessage({ type: 'FOCUS_ALERT', title: 'Focus Alert!', message: 'You seem distracted!' }).catch(() => {});
       }

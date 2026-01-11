@@ -3,6 +3,14 @@ const params = new URLSearchParams(window.location.search);
 const goal = params.get("goal") || "your focus";
 document.getElementById("goalText").textContent = goal;
 
+// Speak motivation if available
+if (window.FocusVoice) {
+    // Small delay to let page settle
+    setTimeout(() => {
+        window.FocusVoice.speakMotivation();
+    }, 500);
+}
+
 document.getElementById("backBtn").addEventListener("click", async () => {
 	// Try to go back; if not possible, close tab via tabs API.
 	try {

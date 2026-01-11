@@ -792,7 +792,14 @@ class FocusMonitor {
     if (this.alertOverlay) {
       this.alertOverlay.style.display = 'flex';
     }
-    this.alertSound.play();
+    
+    // Use TTS if available, else beep
+    if (window.FocusVoice) {
+      window.FocusVoice.speakDistraction();
+    } else {
+      this.alertSound.play();
+    }
+
     this.setStatus('Distracted!', 'error');
     
     // Send notification via background script for alerts even when tab not focused
