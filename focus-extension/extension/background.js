@@ -335,25 +335,28 @@ function endSession() {
 
   stopCaptureLoop();
 
-  // Optional: close capture tab when session ends
-  if (captureTabId != null) {
-    chrome.tabs.remove(captureTabId).catch(() => {});
-  }
-  captureTabId = null;
-  capturePort = null;
-
-  // Close any open monitor tabs or windows (Full or Mini)
-  const monitorUrl = chrome.runtime.getURL("monitor.html");
-  const miniMonitorUrl = chrome.runtime.getURL("mini-monitor.html");
-
-  chrome.tabs.query({}, (tabs) => {
-    const tabsToClose = tabs.filter(
-      (t) => t.url === monitorUrl || t.url === miniMonitorUrl
-    );
-    if (tabsToClose.length > 0) {
-      chrome.tabs.remove(tabsToClose.map((t) => t.id));
+  // Delay closing tabs to ensure storage writes complete
+  setTimeout(() => {
+    // Optional: close capture tab when session ends
+    if (captureTabId != null) {
+      chrome.tabs.remove(captureTabId).catch(() => {});
     }
-  });
+    captureTabId = null;
+    capturePort = null;
+
+    // Close any open monitor tabs or windows (Full or Mini)
+    const monitorUrl = chrome.runtime.getURL("monitor.html");
+    const miniMonitorUrl = chrome.runtime.getURL("mini-monitor.html");
+
+    chrome.tabs.query({}, (tabs) => {
+      const tabsToClose = tabs.filter(
+        (t) => t.url === monitorUrl || t.url === miniMonitorUrl
+      );
+      if (tabsToClose.length > 0) {
+        chrome.tabs.remove(tabsToClose.map((t) => t.id));
+      }
+    });
+  }, 100);
 
   return stats;
 }

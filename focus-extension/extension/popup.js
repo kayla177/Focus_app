@@ -316,61 +316,52 @@ function completeSession() {
 	if (timerInterval) clearInterval(timerInterval);
 
 	chrome.storage.local.set({ isActive: false });
-	chrome.runtime.sendMessage({ action: "endSession" }, (stats) => {
-		// Stats come back from background.js
-		const alerts = stats?.monitorAlertCount || 0;
-		const longestStreakMs = stats?.longestFocusStreakMs || 0;
+	
+	// Small delay to ensure monitor's last updateStats() completes
+	setTimeout(() => {
+		chrome.runtime.sendMessage({ action: "endSession" }, (response) => {
+			// Stats come back from background.js wrapped in { ok, stats }
+			const stats = response?.stats || {};
+			const alerts = stats?.monitorAlertCount || 0;
+			const longestStreakMs = stats?.longestFocusStreakMs || 0;
 
-		// Calculate actual session time (how long they actually ran it)
-		chrome.storage.local.get(["startTime"], (storage) => {
-			const actualSessionMs = Date.now() - (storage.startTime || Date.now());
-			const actualSessionMinutes = actualSessionMs / 60000;
-			console.log(`Actual session time: ${actualSessionMinutes.toFixed(2)} minutes`);
+			// Calculate actual session time (how long they actually ran it)
+			chrome.storage.local.get(["startTime"], (storage) => {
+				const actualSessionMs = Date.now() - (storage.startTime || Date.now());
+				const actualSessionMinutes = Math.max(0.1, actualSessionMs / 60000); // avoid divide-by-zero
+				console.log(`Actual session time: ${actualSessionMinutes.toFixed(2)} minutes`);
 
-			// Format streak
-			const minutes = Math.floor(longestStreakMs / 60000);
-			const seconds = Math.floor((longestStreakMs % 60000) / 1000);
-			const streakText =
-				minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+				// Format streak from background stats (start tracker is source of truth)
+				const minutes = Math.floor(longestStreakMs / 60000);
+				const seconds = Math.floor((longestStreakMs % 60000) / 1000);
+				const streakText =
+					minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-			// Populate Summary
-			document.getElementById("summaryGoal").textContent = sessionGoal;
+				// Populate Summary
+				document.getElementById("summaryGoal").textContent = sessionGoal;
 
-			// Get focus score from facial monitor (real tracked time)
-			chrome.storage.local.get(
-				["facialFocusScore", "facialFocusedMs", "facialDistractedMs", "facialDistractionCount", "facialLongestStretchMs"],
-				(data) => {
-					console.log("Focus data from storage:", data);
-					
-					// Use monitor distraction count if available, otherwise use alerts
-					const totalDistractions = data.facialDistractionCount ?? alerts;
-					console.log(`Distractions: ${totalDistractions}, Actual session: ${actualSessionMinutes.toFixed(2)} min`);
-					
-					// Calculate distraction rate (distractions per minute) using ACTUAL session time
-					const distractionRate = totalDistractions / actualSessionMinutes;
-					console.log(`Distraction rate: ${distractionRate.toFixed(2)} per minute`);
-					
-					// Scoring logic: More distractions in less time = worse score
-					// Start at 100, subtract penalty based on distraction rate
-					// 0 distractions = 100%
-					// 1 distraction per 25 min = ~96%
-					// 1 distraction per 5 min = ~80%
-					// 2 distractions per 1 min = ~40%
-					let focusScore;
-					if (totalDistractions === 0) {
-						focusScore = 100;
-					} else {
-						// Each distraction per minute costs you 30 points
-						// Examples:
-						// - 1 distraction in 25 min = 0.04 rate → 100 - (0.04 * 30) = 98.8%
-						// - 2 distractions in 1 min = 2.0 rate → 100 - (2.0 * 30) = 40%
-						// - 1 distraction in 1 min = 1.0 rate → 100 - (1.0 * 30) = 70%
-						const penalty = distractionRate * 30;
-						focusScore = Math.max(0, 100 - penalty);
-					}
-					
-					console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
-				
+				// Use start focus tracker (background stats) as single source of truth
+				const totalDistractions = stats?.monitorAlertCount ?? 0;
+				const distractionRate = totalDistractions / actualSessionMinutes;
+				console.log(`Distractions: ${totalDistractions}, rate: ${distractionRate.toFixed(2)} per minute`);
+
+				// Scoring: start at 100, subtract 25 points per distraction per minute
+				// Examples:
+				// 0 distractions -> 100%
+				// 1 distraction in 10 min -> 97.5%
+				// 1 distraction in 2 min  -> 87.5%
+				// 2 distractions in 2 min -> 75%
+				// 2 distractions in 1 min -> 50%
+				let focusScore;
+				if (totalDistractions === 0) {
+					focusScore = 100;
+				} else {
+					const penalty = distractionRate * 25;
+					focusScore = Math.max(0, 100 - penalty);
+				}
+
+				console.log(`Final focus score: ${focusScore.toFixed(1)}%`);
+
 				const clampedScore = Math.max(
 					0,
 					Math.min(100, Math.round(focusScore))
@@ -382,33 +373,19 @@ function completeSession() {
 				if (focusProgress)
 					focusProgress.style.width = `${clampedScore}%`;
 
-				// Longest Stretch - prefer facial monitor data if available
-				let finalStreakText = streakText;
-				if (
-					data.facialLongestStretchMs &&
-					data.facialLongestStretchMs > longestStreakMs
-				) {
-					const mins = Math.floor(
-						data.facialLongestStretchMs / 60000
-					);
-					const secs = Math.floor(
-						(data.facialLongestStretchMs % 60000) / 1000
-					);
-					finalStreakText =
-						mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-				}
+				// Longest Stretch from start tracker
+				const finalStreakText = streakText;
 				document.getElementById("longestStretch").textContent =
 					finalStreakText;
 
-					// Distractions (Beeps)
-					document.getElementById("distractionCount").textContent =
-						alerts;
+				// Distractions (Beeps)
+				document.getElementById("distractionCount").textContent =
+					totalDistractions;
 
-					switchView("summary");
-				}
-			);
+				switchView("summary");
+			});
 		});
-	});
+	}, 50); // Small delay to ensure storage writes complete
 }
 
 // -------------------- Timer --------------------
