@@ -1,60 +1,73 @@
-// State management
+// popup.js
+// Handles popup UI + starts a desktop (entire screen) capture session
+
+// -------------------- State --------------------
 let currentView = "setup";
 let sessionGoal = "";
-let sessionDuration = 25;
-let timeRemaining = 0;
+let sessionDuration = 25; // minutes
+let timeRemaining = 0; // seconds
 let timerInterval = null;
 let isOnBreak = false;
 
-// DOM elements
+let debugPoll = null;
+
+// -------------------- DOM --------------------
+// (popup script is loaded with `defer`, so these elements exist)
 const setupView = document.getElementById("setupView");
 const activeView = document.getElementById("activeView");
 const summaryView = document.getElementById("summaryView");
+
 const goalInput = document.getElementById("goalInput");
-const durationSlider = document.getElementById("durationSlider");
-const durationValue = document.getElementById("durationValue");
-const startBtn = document.getElementById("startBtn");
-const presetBtns = document.querySelectorAll(".preset-btn");
 const blockedInput = document.getElementById("blockedInput");
 
-// Initialize
+const durationSlider = document.getElementById("durationSlider");
+const durationValue = document.getElementById("durationValue");
+
+const startBtn = document.getElementById("startBtn");
+const presetBtns = document.querySelectorAll(".preset-btn");
+
+// -------------------- Init --------------------
 document.addEventListener("DOMContentLoaded", () => {
-	loadState();
-	setupEventListeners();
+  loadState();
+  setupEventListeners();
+
+  // If user already typed something (or browser restores input), enable button
+  startBtn.disabled = !goalInput.value.trim();
 });
 
 function setupEventListeners() {
-	// Goal input
-	goalInput.addEventListener("input", () => {
-		startBtn.disabled = !goalInput.value.trim();
-	});
+  // Goal input
+  goalInput.addEventListener("input", () => {
+    startBtn.disabled = !goalInput.value.trim();
+  });
 
-	// Duration slider
-	durationSlider.addEventListener("input", () => {
-		const value = durationSlider.value;
-		durationValue.textContent = `${value} minutes`;
-		sessionDuration = parseInt(value);
-		updatePresetButtons();
-	});
+  // Duration slider
+  durationSlider.addEventListener("input", () => {
+    const value = durationSlider.value;
+    durationValue.textContent = `${value} minutes`;
+    sessionDuration = parseInt(value, 10);
+    updatePresetButtons();
+  });
 
-	// Preset buttons
-	presetBtns.forEach((btn) => {
-		btn.addEventListener("click", () => {
-			const duration = parseInt(btn.dataset.duration);
-			durationSlider.value = duration;
-			sessionDuration = duration;
-			durationValue.textContent = `${duration} minutes`;
-			updatePresetButtons();
-		});
-	});
+  // Preset buttons
+  presetBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const duration = parseInt(btn.dataset.duration, 10);
+      durationSlider.value = duration;
+      sessionDuration = duration;
+      durationValue.textContent = `${duration} minutes`;
+      updatePresetButtons();
+    });
+  });
 
-	// Start button
-	startBtn.addEventListener("click", startSession);
+  // Start
+  startBtn.addEventListener("click", () => startSession());
 
-	// Pause button
-	document.getElementById("pauseBtn").addEventListener("click", pauseSession);
+  // Pause / End
+  const pauseBtn = document.getElementById("pauseBtn");
+  if (pauseBtn) pauseBtn.addEventListener("click", pauseSession);
 
-	// Focus Monitor button
+  // Focus Monitor button
 	document.getElementById("monitorBtn")?.addEventListener("click", () => {
 		chrome.tabs.create({ url: chrome.runtime.getURL("monitor.html") });
 	});
@@ -76,15 +89,15 @@ function setupEventListeners() {
 		});
 	});
 
-	// End break button
+  // End break button
 	document.getElementById("endBreakBtn")?.addEventListener("click", endBreak);
 
-	// New session button
-	document
-		.getElementById("newSessionBtn")
-		.addEventListener("click", resetToSetup);
 
-	// Listen for break end message from background
+  // New session
+  const newSessionBtn = document.getElementById("newSessionBtn");
+  if (newSessionBtn) newSessionBtn.addEventListener("click", resetToSetup);
+
+  // Listen for break end message from background
 	chrome.runtime.onMessage.addListener((request) => {
 		if (request.action === "breakEnded") {
 			endBreak();
@@ -95,12 +108,13 @@ function setupEventListeners() {
 }
 
 function updatePresetButtons() {
-	presetBtns.forEach((btn) => {
-		const duration = parseInt(btn.dataset.duration);
-		btn.classList.toggle("active", duration === sessionDuration);
-	});
+  presetBtns.forEach((btn) => {
+    const duration = parseInt(btn.dataset.duration, 10);
+    btn.classList.toggle("active", duration === sessionDuration);
+  });
 }
 
+// -------------------- Allowed hosts parsing --------------------
 function normalizeBlockedEntry(entry) {
 	let s = (entry || "").trim();
 	if (!s) return null;
@@ -122,51 +136,162 @@ function parseBlockedSites(text) {
 		.filter(Boolean);
 }
 
-function startSession() {
-	sessionGoal = goalInput.value.trim();
-	timeRemaining = sessionDuration * 60;
-	isOnBreak = false;
+// -------------------- Debug preview --------------------
+function startDebugPreview() {
+  stopDebugPreview();
 
-	const blockedListText = (blockedInput?.value || "").trim();
-	const blockedSites = parseBlockedSites(blockedListText);
+  const img = document.getElementById("debugFrame");
+  const statusElId = "debugStatus";
 
-	// Save state (store the raw text so we can re-populate the textarea)
-	chrome.storage.local.set({
-		isActive: true,
-		goal: sessionGoal,
-		duration: sessionDuration,
-		startTime: Date.now(),
-		endTime: Date.now() + sessionDuration * 60 * 1000,
-		blockedSites, // normalized array
-		blockedListText, // raw textarea value
-	});
+  // Create status element if missing
+  let statusEl = document.getElementById(statusElId);
+  if (!statusEl) {
+    statusEl = document.createElement("div");
+    statusEl.id = statusElId;
+    statusEl.style.fontSize = "12px";
+    statusEl.style.opacity = "0.85";
+    statusEl.style.marginTop = "6px";
+    const container = img?.parentElement;
+    if (container) container.appendChild(statusEl);
+  }
 
-	// Send message to background script
-	chrome.runtime.sendMessage({
-		action: "startSession",
-		goal: sessionGoal,
-		duration: sessionDuration,
-		blockedSites,
-	});
+  if (!img) return;
 
-	switchView("active");
-	startTimer();
+  let lastFrameTs = 0;
+
+  debugPoll = setInterval(() => {
+    // 1) Pull latest frame
+    chrome.runtime.sendMessage({ action: "getLatestFrame" }, (res) => {
+      if (chrome.runtime.lastError) {
+        statusEl.textContent = `Preview: error (${chrome.runtime.lastError.message})`;
+        return;
+      }
+
+      const frame = res?.frame;
+      if (frame?.dataUrl) {
+        img.src = frame.dataUrl;
+        img.style.display = "block";
+        lastFrameTs = frame.ts || Date.now();
+      }
+    });
+
+    // 2) Pull debug state from service worker
+    chrome.runtime.sendMessage({ action: "getDebugState" }, (res) => {
+      if (chrome.runtime.lastError) return;
+
+      const s = res?.state;
+      if (!s) return;
+
+      const age = lastFrameTs ? Math.round((Date.now() - lastFrameTs) / 1000) : null;
+      statusEl.textContent =
+        `SW: ${s.hasCapturePort ? "connected" : "no-port"} | ` +
+        `captureTab: ${s.captureTabId ?? "none"} | ` +
+        `frameAge: ${age == null ? "none" : age + "s"}`;
+    });
+  }, 1000);
 }
 
-function startTimer() {
-	document.getElementById("activeGoal").textContent = sessionGoal;
-	updateTimerDisplay();
 
-	if (timerInterval !== null) clearInterval(timerInterval);
+function stopDebugPreview() {
+  if (debugPoll) {
+    clearInterval(debugPoll);
+    debugPoll = null;
+  }
+}
 
-	timerInterval = setInterval(() => {
-		timeRemaining--;
-		updateTimerDisplay();
+// -------------------- Session start/stop --------------------
+function sendMessageAsync(msg) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(msg, (res) => {
+      // If service worker is asleep or any runtime error occurs
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(res ?? { ok: true });
+    });
+  });
+}
 
-		if (timeRemaining <= 0) {
-			completeSession();
-		}
-	}, 1000);
+function chooseEntireScreenOnce() {
+  // NOTE: Must be called from a user gesture (your Start button click)
+  return new Promise((resolve) => {
+    // Desktop-only capture: avoid window selection (DevTools window errors)
+    chrome.desktopCapture.chooseDesktopMedia(["screen"], (streamId) => {
+      resolve(streamId || null);
+    });
+  });
+}
+
+async function startSession() {
+  // Prevent double clicks
+  startBtn.disabled = true;
+
+  try {
+    sessionGoal = goalInput.value.trim();
+    if (!sessionGoal) return;
+
+    timeRemaining = sessionDuration * 60;
+    isOnBreak = false;
+
+    // 1) Parse blocked sites from textarea
+    const blockedListText = (blockedInput?.value || "").trim();
+    const blockedSites = parseBlockedSites(blockedListText);
+
+    // 2) Choose entire screen ONCE (must be user gesture)
+    const streamId = await chooseEntireScreenOnce();
+    if (!streamId) {
+      console.warn("User cancelled screen picker (no streamId).");
+      return;
+    }
+
+    // 3) Persist popup state
+    const now = Date.now();
+    await new Promise((resolve) => {
+      chrome.storage.local.set(
+        {
+          isActive: true,
+          goal: sessionGoal,
+          duration: sessionDuration,
+          startTime: now,
+          endTime: now + sessionDuration * 60 * 1000,
+
+          // store both raw + normalized
+          blockedSites,
+          blockedListText,
+
+          // optional metadata
+          captureMode: "desktop",
+        },
+        resolve
+      );
+    });
+
+    // 4) Start background session (send streamId + blockedSites)
+    const res = await sendMessageAsync({
+      action: "startSession",
+      goal: sessionGoal,
+      duration: sessionDuration,
+      blockedSites,
+      streamId,
+      captureMode: "desktop",
+    });
+
+    if (res?.ok === false) {
+      console.warn("startSession failed:", res?.error || res);
+      return;
+    }
+
+    switchView("active");
+    startTimer();
+    startDebugPreview();
+  } catch (e) {
+    console.warn("startSession error:", e);
+  } finally {
+    if (currentView === "setup") {
+      startBtn.disabled = !goalInput.value.trim();
+    }
+  }
 }
 
 function pauseTimer() {
@@ -174,33 +299,6 @@ function pauseTimer() {
 		clearInterval(timerInterval);
 		timerInterval = null;
 	}
-}
-
-function resumeTimer() {
-	if (timerInterval === null) {
-		timerInterval = setInterval(() => {
-			timeRemaining--;
-			updateTimerDisplay();
-
-			if (timeRemaining <= 0) {
-				completeSession();
-			}
-		}, 1000);
-	}
-}
-
-function updateTimerDisplay() {
-	const mins = Math.floor(timeRemaining / 60);
-	const secs = timeRemaining % 60;
-	document.getElementById("timeDisplay").textContent = `${mins}:${secs
-		.toString()
-		.padStart(2, "0")}`;
-
-	// Update progress circle
-	const progress =
-		((sessionDuration * 60 - timeRemaining) / (sessionDuration * 60)) * 565;
-	document.getElementById("timerProgress").style.strokeDashoffset =
-		565 - progress;
 }
 
 function pauseSession() {
@@ -313,6 +411,44 @@ function completeSession() {
 	});
 }
 
+// -------------------- Timer --------------------
+function startTimer() {
+  const goalEl = document.getElementById("activeGoal");
+  if (goalEl) goalEl.textContent = sessionGoal;
+
+  updateTimerDisplay();
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeRemaining--;
+    updateTimerDisplay();
+
+    if (timeRemaining <= 0) {
+      completeSession();
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+	if (timerInterval !== null) {
+		clearInterval(timerInterval);
+		timerInterval = null;
+	}
+}
+
+function resumeTimer() {
+	if (timerInterval === null) {
+		timerInterval = setInterval(() => {
+			timeRemaining--;
+			updateTimerDisplay();
+
+			if (timeRemaining <= 0) {
+				completeSession();
+			}
+		}, 1000);
+	}
+}
+
 function startBreak() {
 	isOnBreak = true;
 	pauseTimer();
@@ -334,22 +470,44 @@ function endBreak() {
 	resumeTimer();
 }
 
+function updateTimerDisplay() {
+  const mins = Math.floor(timeRemaining / 60);
+  const secs = Math.max(timeRemaining % 60, 0);
+
+  const timeEl = document.getElementById("timeDisplay");
+  if (timeEl) {
+    timeEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  // Progress circle (565 is your circle circumference in CSS/SVG setup)
+  const total = sessionDuration * 60;
+  const elapsed = Math.min(total - timeRemaining, total);
+  const progress = (elapsed / total) * 565;
+
+  const progressEl = document.getElementById("timerProgress");
+  if (progressEl) {
+    progressEl.style.strokeDashoffset = 565 - progress;
+  }
+}
+
+// -------------------- Views --------------------
 function resetToSetup() {
-	goalInput.value = "";
-	startBtn.disabled = true;
-	timeRemaining = 0;
-	switchView("setup");
+  goalInput.value = "";
+  startBtn.disabled = true;
+  timeRemaining = 0;
+  switchView("setup");
 }
 
 function switchView(view) {
-	setupView.style.display = view === "setup" ? "block" : "none";
-	activeView.style.display = view === "active" ? "block" : "none";
-	document.getElementById("breakView").style.display =
+  setupView.style.display = view === "setup" ? "block" : "none";
+  activeView.style.display = view === "active" ? "block" : "none";
+  document.getElementById("breakView").style.display =
 		view === "break" ? "block" : "none";
-	summaryView.style.display = view === "summary" ? "block" : "none";
-	currentView = view;
+  summaryView.style.display = view === "summary" ? "block" : "none";
+  currentView = view;
 }
 
+// -------------------- Restore state --------------------
 function loadState() {
 	chrome.storage.local.get(
 		[
