@@ -22,10 +22,11 @@ document.getElementById("backBtn").addEventListener("click", async () => {
   chrome.runtime.sendMessage({ action: "NUDGE_RETURN_TO_FOCUS" });
 
   // also close this tab
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) chrome.tabs.remove(tab.id);
-  } catch (_) {}
+	try {
+	const w = await chrome.windows.getCurrent();
+	if (w?.id) chrome.windows.remove(w.id);
+	} catch (_) {}
+
 });
 
 document.getElementById("breakBtn").addEventListener("click", async () => {

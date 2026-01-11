@@ -24,6 +24,8 @@ let lastVerdictDistracted = false;
 let snoozeUntil = 0; // timestamp ms; when > now, don't nudge
 let activeNudgeNotificationId = null;
 let activeNudgeTabId = null;
+let activeNudgeWindowId = null;
+
 
 // Notification ids
 const NUDGE_PREFIX = "focus-nudge-";
@@ -76,7 +78,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   else if (request.action === "NUDGE_RETURN_TO_FOCUS") {
     (async () => {
       snoozeUntil = 0;
-      await closeNudgeTabIfOpen();
+      await closeNudgePopupIfOpen();
       const ok = await focusBackToHomeTab();
       if (!ok)
         chrome.tabs.create({ url: chrome.runtime.getURL("monitor.html") });
@@ -85,7 +87,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // snooze for 60s, close the nudge UI
     snoozeUntil = Date.now() + 60 * 1000;
     chrome.alarms.create(ALARM_SNOOZE_END, { when: snoozeUntil });
-    closeNudgeTabIfOpen();
+    closeNudgePopupIfOpen();
     // allow them to continue what they were doing (nudge page will navigate back via blocked.js)
   } else if (request.action === "NUDGE_CLOSED") {
     // user closed nudge tab manually; optionally snooze a bit to avoid spam
@@ -278,7 +280,7 @@ function endSession() {
     }
   });
   stopCaptureLoop();
-  closeNudgeTabIfOpen();
+  closeNudgePopupIfOpen();
   activeNudgeTabId = null;
 
   return stats;
@@ -376,6 +378,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         url: lastVerdict?.url || "",
         reason: lastVerdict?.reason || "Quick check-in.",
       }).catch(console.warn);
+	  openNudgePopup({
+		goal: sessionGoal,
+		url: tab?.url || "",
+		reason: v.reason || "",
+		}).catch(console.warn);
+
     }
   }
 });
@@ -604,11 +612,12 @@ async function analyzeFrame({ dataUrl, ts, tabId }) {
     updateStreak();
 
     // Open your own UI instead of OS notifications
-    openNudgeTab({
-      goal: sessionGoal,
-      url: tab?.url || "",
-      reason: v.reason || "",
-    }).catch(console.warn);
+	openNudgePopup({
+	goal: sessionGoal,
+	url: tab?.url || "",
+	reason: v.reason || "",
+	}).catch(console.warn);
+
   }
 }
 
@@ -616,22 +625,17 @@ function isExtensionUrl(u) {
   return typeof u === "string" && u.startsWith("chrome-extension://");
 }
 
-async function openNudgeTab({ goal, url, reason }) {
-  // skip if snoozed
+async function openNudgePopup({ goal, url, reason }) {
   const now = Date.now();
   if (now < snoozeUntil) return;
 
-  // if already open, just focus it
-  if (activeNudgeTabId) {
+  // If popup already exists, focus it
+  if (activeNudgeWindowId) {
     try {
-      const t = await chrome.tabs.get(activeNudgeTabId);
-      if (t?.id != null) {
-        await chrome.tabs.update(t.id, { active: true });
-        await chrome.windows.update(t.windowId, { focused: true });
-        return;
-      }
+      await chrome.windows.update(activeNudgeWindowId, { focused: true });
+      return;
     } catch (_) {
-      activeNudgeTabId = null;
+      activeNudgeWindowId = null;
     }
   }
 
@@ -641,9 +645,23 @@ async function openNudgeTab({ goal, url, reason }) {
     `&url=${encodeURIComponent(url || "")}` +
     `&reason=${encodeURIComponent(reason || "")}`;
 
-  const tab = await chrome.tabs.create({ url: nudgeUrl, active: true });
-  activeNudgeTabId = tab.id;
+  const width = 420;
+  const height = 520;
+  const { left, top } = await getTopRightPosition(width, height);
+
+  const w = await chrome.windows.create({
+    url: nudgeUrl,
+    type: "popup",
+    width,
+    height,
+    left,
+    top,
+    focused: true,
+  });
+
+  activeNudgeWindowId = w?.id ?? null;
 }
+
 
 async function focusBackToHomeTab() {
   try {
@@ -657,10 +675,30 @@ async function focusBackToHomeTab() {
   return false;
 }
 
-async function closeNudgeTabIfOpen() {
-  if (!activeNudgeTabId) return;
+// async function closeNudgeTabIfOpen() {
+//   if (!activeNudgeTabId) return;
+//   try {
+//     await chrome.tabs.remove(activeNudgeTabId);
+//   } catch (_) {}
+//   activeNudgeTabId = null;
+// }
+
+async function getTopRightPosition(width, height) {
+  // Use lastFocused window to compute coordinates
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  const leftBound = win?.left ?? 0;
+  const topBound = win?.top ?? 0;
+  const winWidth = win?.width ?? 1200;
+
+  const left = leftBound + Math.max(0, winWidth - width - 20);
+  const top = topBound + 80; // slight offset from macOS menu bar area
+  return { left, top };
+}
+
+async function closeNudgePopupIfOpen() {
+  if (!activeNudgeWindowId) return;
   try {
-    await chrome.tabs.remove(activeNudgeTabId);
+    await chrome.windows.remove(activeNudgeWindowId);
   } catch (_) {}
-  activeNudgeTabId = null;
+  activeNudgeWindowId = null;
 }
