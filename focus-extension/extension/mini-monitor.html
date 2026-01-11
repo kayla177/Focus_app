@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Focus</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      width: 120px;
+      height: 80px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 10px;
+      gap: 6px;
+    }
+    
+    .status-dot {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 15px #4ade80;
+      transition: all 0.3s;
+    }
+    
+    .status-dot.distracted {
+      background: #ff6b6b;
+      box-shadow: 0 0 15px #ff6b6b;
+      animation: pulse 0.8s infinite;
+    }
+    
+    .status-dot.away {
+      background: #fbbf24;
+      box-shadow: 0 0 15px #fbbf24;
+    }
+    
+    .status-dot.loading {
+      background: #888;
+      box-shadow: 0 0 10px #888;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.1); }
+    }
+    
+    .label {
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .close-btn {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      background: rgba(255, 107, 107, 0.3);
+      border: none;
+      color: white;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.6;
+      transition: all 0.2s;
+    }
+    
+    .close-btn:hover {
+      opacity: 1;
+      background: rgba(255, 107, 107, 0.8);
+    }
+    
+    /* Hidden video/canvas for tracking */
+    #trackingCanvas, #trackingVideo {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="close-btn" id="closeBtn" title="Stop monitoring">×</button>
+    <div class="status-dot loading" id="statusDot"></div>
+    <div class="label" id="statusLabel">Starting...</div>
+  </div>
+  
+  <!-- Hidden elements for tracking -->
+  <canvas id="trackingCanvas"></canvas>
+  <video id="trackingVideo" autoplay playsinline muted></video>
+  
+  <script src="libs/webgazer.js"></script>
+  <script src="mini-monitor.js"></script>
+</body>
+</html>

@@ -98,6 +98,14 @@ class FocusMonitor {
     this.lastHeadMetrics = null;
     this.lastHeadDelta = null;
 
+    // Minimize feature
+    this.isMinimized = false;
+    this.videoSection = document.getElementById('videoSection');
+    this.miniIndicator = document.getElementById('miniIndicator');
+    this.miniStatus = document.getElementById('miniStatus');
+    this.miniExpandBtn = document.getElementById('miniExpandBtn');
+    this.minimizeBtn = document.getElementById('minimizeBtn');
+
     this.init();
   }
 
@@ -106,6 +114,10 @@ class FocusMonitor {
     this.startBtn.addEventListener('click', () => this.start());
     this.stopBtn.addEventListener('click', () => this.stop());
     this.calibrateBtn?.addEventListener('click', () => this.startCalibration());
+
+    // Minimize/Expand handlers
+    this.minimizeBtn?.addEventListener('click', () => this.toggleMinimize());
+    this.miniExpandBtn?.addEventListener('click', () => this.toggleMinimize());
 
     // PiP Pop-out
     this.pipBtn?.addEventListener('click', async () => {
@@ -207,6 +219,7 @@ class FocusMonitor {
       this.stopBtn.disabled = false;
       this.calibrateBtn.disabled = false;
       if (this.pipBtn) this.pipBtn.disabled = false;
+      if (this.minimizeBtn) this.minimizeBtn.disabled = false;
 
       // Start PiP stream
       if (this.canvas) {
@@ -254,12 +267,38 @@ class FocusMonitor {
     this.stopBtn.disabled = true;
     this.calibrateBtn.disabled = false;
     if (this.pipBtn) this.pipBtn.disabled = true;
+    if (this.minimizeBtn) this.minimizeBtn.disabled = true;
+
+    // If minimized, restore to full view
+    if (this.isMinimized) {
+      this.toggleMinimize();
+    }
 
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});
     }
 
     this.setStatus('Stopped', '');
+  }
+
+  toggleMinimize() {
+    this.isMinimized = !this.isMinimized;
+    if (this.isMinimized) {
+      this.videoSection?.classList.add('minimized');
+      this.miniIndicator?.classList.add('visible');
+    } else {
+      this.videoSection?.classList.remove('minimized');
+      this.miniIndicator?.classList.remove('visible');
+    }
+  }
+
+  updateMiniIndicator(state) {
+    if (!this.miniStatus) return;
+    if (state === 'focused') {
+      this.miniStatus.classList.remove('distracted');
+    } else {
+      this.miniStatus.classList.add('distracted');
+    }
   }
 
   detect() {
@@ -666,6 +705,9 @@ class FocusMonitor {
       this.attentionStatusEl.textContent = state === 'focused' ? '✓ Focused' : '✗ Distracted';
       this.attentionStatusEl.style.color = state === 'focused' ? '#4ade80' : '#ff6b6b';
     }
+    
+    // Update mini indicator (for minimized view)
+    this.updateMiniIndicator(state);
     
     // Update face box color
     this.faceBox.className = `face-box ${state}`;

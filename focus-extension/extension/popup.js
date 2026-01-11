@@ -59,6 +59,23 @@ function setupEventListeners() {
 		chrome.tabs.create({ url: chrome.runtime.getURL("monitor.html") });
 	});
 
+	// Mini Monitor button - opens small popup window
+	document.getElementById("miniMonitorBtn")?.addEventListener("click", () => {
+		const width = 140;
+		const height = 100;
+		const left = screen.width - width - 20;
+		const top = 80;
+		chrome.windows.create({
+			url: chrome.runtime.getURL("mini-monitor.html"),
+			type: "popup",
+			width: width,
+			height: height,
+			left: left,
+			top: top,
+			focused: false
+		});
+	});
+
 	// End break button
 	document.getElementById("endBreakBtn")?.addEventListener("click", endBreak);
 

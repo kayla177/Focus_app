@@ -19,9 +19,16 @@
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- Floating Mini Indicator (shown when camera hidden) -->
+      <div class="mini-indicator" id="miniIndicator">
+        <div class="mini-status" id="miniStatus"></div>
+        <span class="mini-label">Focus</span>
+        <button class="mini-expand-btn" id="miniExpandBtn" title="Expand camera">⬆</button>
+      </div>
+
       <!-- Video Section -->
-      <div class="video-section">
-        <div class="video-container">
+      <div class="video-section" id="videoSection">
+        <div class="video-container" id="videoContainer">
           <!-- We now render everything to the canvas (video + text) -->
           <canvas id="overlay"></canvas>
           <!-- Hidden pip source -->
@@ -54,6 +61,9 @@
           </button>
           <button id="pipBtn" class="control-btn" disabled>
             <span>📺</span> Pop-out
+          </button>
+          <button id="minimizeBtn" class="control-btn" disabled>
+            <span>➖</span> Minimize
           </button>
         </div>
       </div>
