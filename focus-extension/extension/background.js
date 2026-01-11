@@ -54,7 +54,10 @@ function getDebugState() {
   return {
     isSessionActive,
     sessionGoal,
-    allowedHostsCount: allowedHosts?.length || 0,
+    blockedSitesCount: blockedSites?.length || 0,
+    distractionCount,
+    isOnBreak,
+    breakEndTime,
     captureTabId,
     hasCapturePort: !!capturePort,
     latestFrameTs: latestFrame?.ts || null,
@@ -70,6 +73,10 @@ function safeSendMessage(message) {
   } catch (_) {
     // ignore
   }
+}
+
+function sendToPopupToast(message) {
+  safeSendMessage({ action: "uiToast", message });
 }
 
 function waitForCaptureReady(timeoutMs = 7000) {
@@ -117,23 +124,26 @@ async function ensureCapturePage() {
     active: false,
     pinned: true,
   });
-  log("capture tab created", { id: tab.id });
 
   captureTabId = tab.id;
+  log("capture tab created", { id: tab.id });
 
   await waitForCaptureReady();
   log("capture page ready");
 }
 
-async function startCaptureLoop() {
-  log("startCaptureLoop() posting pickAndStart");
+async function startCaptureLoop(streamId) {
+  log("startCaptureLoop() posting pickAndStart", { streamIdPresent: !!streamId });
 
   await ensureCapturePage();
   if (!capturePort) throw new Error("Capture port not connected");
+  if (!streamId) throw new Error("Missing streamId (user must pick a screen)");
 
+  // IMPORTANT: pass streamId to capture page so it can call getUserMedia correctly
   capturePort.postMessage({
     action: "pickAndStart",
     payload: {
+      streamId,
       intervalMs: 1000,
       maxWidth: 1280,
       maxHeight: 720,
@@ -157,7 +167,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((msg) => {
     if (!msg?.action) return;
-    log("onConnect", { name: port.name, senderTabId: port.sender?.tab?.id });
+    log("onConnect msg", { action: msg.action, senderTabId: port.sender?.tab?.id });
 
     if (msg.action === "ready") {
       if (captureReadyResolve) captureReadyResolve();
@@ -172,10 +182,9 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 
     if (msg.action === "captureError") {
-      console.warn("Capture error:", msg.message);
+      warn("Capture error:", msg.message);
 
       const m = String(msg.message || "");
-
       if (
         m.includes("DevTools") ||
         m.includes("Invalid state") ||
@@ -188,7 +197,6 @@ chrome.runtime.onConnect.addListener((port) => {
             "Screen capture failed. Please close DevTools (if open) and start again, then pick 'Entire screen'.",
         });
       }
-
       return;
     }
   });
@@ -209,35 +217,41 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // ----- Messages from popup / other extension pages -----
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action === "startSession") {
-    startSession(
-      request.goal,
-      request.duration,
-      request.allowedHosts,
-      request.streamId
-    ).catch((e) => {
-      console.warn("startSession failed:", e);
-      sendToPopupToast(`startSession failed: ${String(e)}`);
-    });
+    startSession(request.goal, request.duration, request.blockedSites, request.streamId)
+      .then(() => sendResponse?.({ ok: true }))
+      .catch((e) => {
+        warn("startSession failed:", e);
+        sendToPopupToast(`startSession failed: ${String(e?.message ?? e)}`);
+        sendResponse?.({ ok: false, error: String(e?.message ?? e) });
+      });
 
-    sendResponse?.({ ok: true });
-    return; // sync
+    return true; // async
   }
 
   if (request?.action === "endSession") {
-    endSession();
-    sendResponse?.({ ok: true });
-    return;
+    const stats = endSession();
+    sendResponse?.({ ok: true, stats });
+    return true;
   }
 
-  if (request.action === "takeBreak") {
+  if (request?.action === "takeBreak") {
     takeBreak();
-  } else if (request.action === "resumeSession") {
+    sendResponse?.({ ok: true });
+    return true;
+  }
+
+  if (request?.action === "resumeSession") {
     resumeSession();
-  } else if (request.type === "FOCUS_ALERT") {
+    sendResponse?.({ ok: true });
+    return true;
+  }
+
+  if (request?.type === "FOCUS_ALERT") {
     monitorAlertCount++;
     updateStreak();
-    // Show Chrome notification for focus alerts (works even when monitor tab not focused)
     showFocusNotification(request.title, request.message);
+    sendResponse?.({ ok: true });
+    return true;
   }
 
   if (request?.action === "getLatestFrame") {
@@ -249,17 +263,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ ok: true, state: getDebugState() });
     return true;
   }
-  return true;
+
+  return false;
 });
 
-function sendToPopupToast(message) {
-  try {
-    safeSendMessage({ action: "uiToast", message });
-  } catch (_) {}
-}
-
 // ----- Session control -----
-async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
+async function startSession(goal, duration, blockedSitesFromPopup, streamId) {
   // Stop any previous session capture first
   if (isSessionActive) {
     try {
@@ -270,12 +279,13 @@ async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
   log("startSession()", {
     goal,
     duration,
-    allowedHostsCount: allowedHostsFromPopup?.length || 0,
+    blockedSitesCount: blockedSitesFromPopup?.length || 0,
+    streamIdPresent: !!streamId,
   });
 
   isSessionActive = true;
   sessionGoal = goal || "";
-  blockedSites = blocked || [];
+  blockedSites = Array.isArray(blockedSitesFromPopup) ? blockedSitesFromPopup : [];
   distractionCount = 0;
 
   monitorAlertCount = 0;
@@ -283,12 +293,17 @@ async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
   lastDistractionTime = sessionStartTime;
   longestFocusStreakMs = 0;
 
+  isOnBreak = false;
+  breakEndTime = null;
+
   chrome.alarms.clear("sessionEnd");
+  chrome.alarms.clear("breakEnd");
+
   if (typeof duration === "number" && duration > 0) {
     chrome.alarms.create("sessionEnd", { delayInMinutes: duration });
   }
 
-  await startCaptureLoop();
+  await startCaptureLoop(streamId);
 }
 
 function endSession() {
@@ -311,8 +326,10 @@ function endSession() {
   sessionGoal = "";
   blockedSites = [];
   distractionCount = 0;
+
   isOnBreak = false;
   breakEndTime = null;
+
   chrome.alarms.clear("sessionEnd");
   chrome.alarms.clear("breakEnd");
 
@@ -344,12 +361,10 @@ function endSession() {
 function takeBreak() {
   isOnBreak = true;
   breakEndTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+  chrome.alarms.clear("breakEnd");
   chrome.alarms.create("breakEnd", { delayInMinutes: 5 });
 
-  // Store break state so popup can restore it
   chrome.storage.local.set({ isOnBreak: true, breakEndTime });
-
-  // Notify popup to show break timer
   chrome.runtime.sendMessage({ action: "takeBreak" }).catch(() => {});
 }
 
@@ -358,14 +373,14 @@ function resumeSession() {
   breakEndTime = null;
   chrome.alarms.clear("breakEnd");
 
-  // Clear break state from storage
   chrome.storage.local.set({ isOnBreak: false, breakEndTime: null });
+  chrome.runtime.sendMessage({ action: "breakEnded" }).catch(() => {});
 }
 
 function isHostBlocked(hostname, blockedList) {
   if (!hostname || !blockedList.length) return false;
   return blockedList.some((site) => {
-    const cleanSite = site
+    const cleanSite = String(site || "")
       .toLowerCase()
       .replace(/^(https?:\/\/)?(www\.)?/, "")
       .split("/")[0];
@@ -379,42 +394,32 @@ function isHostBlocked(hostname, blockedList) {
 
 // ----- Blocking on navigation -----
 chrome.webNavigation.onCommitted.addListener((details) => {
-	if (!isSessionActive || details.frameId !== 0) return;
+  if (!isSessionActive || details.frameId !== 0) return;
 
-	let url;
-	try {
-		url = new URL(details.url);
-	} catch (_) {
-		return;
-	}
+  let url;
+  try {
+    url = new URL(details.url);
+  } catch (_) {
+    return;
+  }
 
+  // don't block chrome:// pages etc
   if (url.protocol.startsWith("chrome")) return;
 
   // Skip blocking during break
   if (isOnBreak) return;
 
   const isBlocked = isHostBlocked(url.hostname, blockedSites);
-
   if (isBlocked) {
     distractionCount++; // Web distraction
     updateStreak(); // Reset streak
 
-    // IMPORTANT: Next export blocked page path
     const blockedUrl =
       chrome.runtime.getURL("blocked/index.html") +
-      `?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(
-        details.url
-      )}`;
+      `?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(details.url)}`;
 
-		// IMPORTANT: Next export blocked page path
-		const blockedUrl =
-			chrome.runtime.getURL("blocked/index.html") +
-			`?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(
-				details.url
-			)}`;
-
-		chrome.tabs.update(details.tabId, { url: blockedUrl });
-	}
+    chrome.tabs.update(details.tabId, { url: blockedUrl });
+  }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -422,8 +427,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     endSession();
   } else if (alarm.name === "breakEnd") {
     resumeSession();
-    // notify popup to resume timer
-    chrome.runtime.sendMessage({ action: "breakEnded" }).catch(() => {});
   }
 });
 
@@ -431,7 +434,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 let lastNotificationTime = 0;
 function showFocusNotification(title, message) {
   const now = Date.now();
-  // Throttle: max one notification every 5 seconds
   if (now - lastNotificationTime < 5000) return;
   lastNotificationTime = now;
 
@@ -445,30 +447,22 @@ function showFocusNotification(title, message) {
       message: message || "You seem distracted. Get back on track!",
       priority: 2,
       requireInteraction: false,
-      silent: false, // This enables notification sound
+      silent: false,
     },
     () => {
-      // Auto-close after 4 seconds
-      setTimeout(() => {
-        chrome.notifications.clear(notificationId);
-      }, 4000);
+      setTimeout(() => chrome.notifications.clear(notificationId), 4000);
     }
   );
 }
 
-// Click notification to focus the monitor tab
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (notificationId.startsWith("focus-alert-")) {
-    // Find and focus the monitor tab
-    chrome.tabs.query(
-      { url: chrome.runtime.getURL("monitor.html") },
-      (tabs) => {
-        if (tabs.length > 0) {
-          chrome.tabs.update(tabs[0].id, { active: true });
-          chrome.windows.update(tabs[0].windowId, { focused: true });
-        }
+    chrome.tabs.query({ url: chrome.runtime.getURL("monitor.html") }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.update(tabs[0].id, { active: true });
+        chrome.windows.update(tabs[0].windowId, { focused: true });
       }
-    );
+    });
   }
 });
 
@@ -526,12 +520,12 @@ async function maybeAnalyze() {
 
     const json = await res.json();
     if (!json?.ok) {
-      console.warn("analyze failed:", json?.error || json);
+      warn("analyze failed:", json?.error || json);
       return;
     }
 
     const v = json.verdict;
-    console.log("verdict:", v);
+    log("verdict:", v);
 
     if (v?.distracted && (v.confidence ?? 0) >= 0.7) {
       const blockedUrl =
@@ -542,11 +536,13 @@ async function maybeAnalyze() {
         active: true,
         currentWindow: true,
       });
-      if (activeTab?.id != null)
+
+      if (activeTab?.id != null) {
         await chrome.tabs.update(activeTab.id, { url: blockedUrl });
+      }
     }
   } catch (e) {
-    console.warn("analyze error:", e);
+    warn("analyze error:", e);
   } finally {
     inFlightAnalyze = false;
     nextAnalyzeAllowedAt = Date.now() + ANALYZE_INTERVAL_MS;
