@@ -105,18 +105,56 @@ function startDebugPreview() {
   stopDebugPreview();
 
   const img = document.getElementById("debugFrame");
+  const statusElId = "debugStatus";
+
+  // Create status element if missing
+  let statusEl = document.getElementById(statusElId);
+  if (!statusEl) {
+    statusEl = document.createElement("div");
+    statusEl.id = statusElId;
+    statusEl.style.fontSize = "12px";
+    statusEl.style.opacity = "0.85";
+    statusEl.style.marginTop = "6px";
+    const container = img?.parentElement;
+    if (container) container.appendChild(statusEl);
+  }
+
   if (!img) return;
 
+  let lastFrameTs = 0;
+
   debugPoll = setInterval(() => {
+    // 1) Pull latest frame
     chrome.runtime.sendMessage({ action: "getLatestFrame" }, (res) => {
+      if (chrome.runtime.lastError) {
+        statusEl.textContent = `Preview: error (${chrome.runtime.lastError.message})`;
+        return;
+      }
+
       const frame = res?.frame;
       if (frame?.dataUrl) {
         img.src = frame.dataUrl;
         img.style.display = "block";
+        lastFrameTs = frame.ts || Date.now();
       }
+    });
+
+    // 2) Pull debug state from service worker
+    chrome.runtime.sendMessage({ action: "getDebugState" }, (res) => {
+      if (chrome.runtime.lastError) return;
+
+      const s = res?.state;
+      if (!s) return;
+
+      const age = lastFrameTs ? Math.round((Date.now() - lastFrameTs) / 1000) : null;
+      statusEl.textContent =
+        `SW: ${s.hasCapturePort ? "connected" : "no-port"} | ` +
+        `captureTab: ${s.captureTabId ?? "none"} | ` +
+        `frameAge: ${age == null ? "none" : age + "s"}`;
     });
   }, 1000);
 }
+
 
 function stopDebugPreview() {
   if (debugPoll) {
@@ -162,22 +200,7 @@ async function startSession() {
     const allowedListText = (allowedInput?.value || "").trim();
     const allowedHosts = parseAllowedHosts(allowedListText);
 
-    // 0) Pre-warm offscreen doc BEFORE requesting streamId,
-    // so the streamId doesn't expire while creating the offscreen document.
-    const prep = await sendMessageAsync({ action: "prepareOffscreen" });
-    if (!prep?.ok) {
-      console.warn("prepareOffscreen failed:", prep?.error);
-      // We can still attempt capture; but usually this indicates a manifest/setup issue.
-    }
-
-    // 1) Ask user to pick "Entire Screen" (only option now)
-    const streamId = await chooseEntireScreenOnce();
-    if (!streamId) {
-      console.warn("User cancelled screen share.");
-      return;
-    }
-
-    // 2) Persist popup state
+    // Persist popup state
     const now = Date.now();
     await new Promise((resolve) => {
       chrome.storage.local.set(
@@ -195,15 +218,19 @@ async function startSession() {
       );
     });
 
-    // 3) Start background session WITH streamId
-    await sendMessageAsync({
+    // Start background session (NO streamId; capture page will open picker)
+    const res = await sendMessageAsync({
       action: "startSession",
       goal: sessionGoal,
       duration: sessionDuration,
       allowedHosts,
       captureMode: "desktop",
-      streamId,
     });
+
+    if (res?.ok === false) {
+      console.warn("startSession failed:", res?.error || res);
+      return;
+    }
 
     switchView("active");
     startTimer();

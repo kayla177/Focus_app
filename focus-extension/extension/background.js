@@ -1,84 +1,115 @@
 // background.js (MV3 service worker)
-// Desktop screen capture + session blocking + analyzer trigger
+// Uses a real extension tab (capture.html) to run getUserMedia for desktop capture.
 
-// -------------------- Session state --------------------
 let isSessionActive = false;
 let sessionGoal = "";
-let allowedHosts = []; // allowlist of hostnames (baseline)
+let allowedHosts = [];
 let distractionCount = 0;
-
-let captureMode = "desktop"; // for now: desktop only
-let desktopStreamId = null;
 
 let latestFrame = null; // { ts, tabId, dataUrl }
 let pendingFrameForAnalysis = null;
 
-// -------------------- Offscreen lifecycle --------------------
-let offscreenIsReady = false;
-let offscreenReadyResolve = null;
-let offscreenReadyPromise = null;
+// ----- Capture page (extension tab) wiring via Port -----
+let captureTabId = null;
+let capturePort = null;
 
-function waitForOffscreenReady(timeoutMs = 5000) {
-  if (offscreenIsReady) return Promise.resolve(true);
-  if (offscreenReadyPromise) return offscreenReadyPromise;
+let captureReadyResolve = null;
+let captureReadyPromise = null;
 
-  offscreenReadyPromise = new Promise((resolve, reject) => {
+const DEBUG = true;
+function log(...args) { if (DEBUG) console.log("[sw]", ...args); }
+function warn(...args) { console.warn("[sw]", ...args); }
+
+// Catch “Uncaught (in promise)” so it shows with context
+self.addEventListener("unhandledrejection", (event) => {
+  warn("UNHANDLED REJECTION:", event.reason);
+});
+self.addEventListener("error", (event) => {
+  warn("SW ERROR:", event.message, event.error);
+});
+
+function getDebugState() {
+  return {
+    isSessionActive,
+    sessionGoal,
+    allowedHostsCount: allowedHosts?.length || 0,
+    captureTabId,
+    hasCapturePort: !!capturePort,
+    latestFrameTs: latestFrame?.ts || null,
+  };
+}
+
+function safeSendMessage(message) {
+  try {
+    chrome.runtime.sendMessage(message, () => {
+      // Swallow the error if nobody is listening (e.g., popup closed)
+      void chrome.runtime.lastError;
+    });
+  } catch (_) {
+    // ignore
+  }
+}
+
+function waitForCaptureReady(timeoutMs = 7000) {
+  if (capturePort) return Promise.resolve(true);
+  if (captureReadyPromise) return captureReadyPromise;
+
+  captureReadyPromise = new Promise((resolve, reject) => {
     const t = setTimeout(() => {
-      offscreenReadyPromise = null;
-      offscreenReadyResolve = null;
-      reject(new Error("Offscreen did not become ready in time"));
+      captureReadyPromise = null;
+      captureReadyResolve = null;
+      reject(new Error("Capture page did not become ready in time"));
     }, timeoutMs);
 
-    offscreenReadyResolve = () => {
+    captureReadyResolve = () => {
       clearTimeout(t);
       resolve(true);
     };
   });
 
-  return offscreenReadyPromise;
+  return captureReadyPromise;
 }
 
-async function ensureOffscreen() {
-  if (!chrome.offscreen?.createDocument) {
-    throw new Error(
-      "chrome.offscreen is not available. Check manifest permissions + reload extension."
-    );
+async function ensureCapturePage() {
+  // If port exists, we're good
+  if (capturePort) return;
+  log("ensureCapturePage() begin", { captureTabId, hasCapturePort: !!capturePort });
+
+
+  // If tab exists but port is missing, close it and recreate cleanly
+  if (captureTabId != null) {
+    try {
+      await chrome.tabs.remove(captureTabId);
+    } catch (_) {}
+    captureTabId = null;
   }
 
-  // Prefer getContexts when available
-  if (chrome.runtime?.getContexts) {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: ["OFFSCREEN_DOCUMENT"],
-    });
-    if (contexts.length > 0) return;
-  } else if (chrome.offscreen?.hasDocument) {
-    if (await chrome.offscreen.hasDocument()) return;
-  }
+  captureReadyPromise = null;
+  captureReadyResolve = null;
 
-  // reset readiness each time we create
-  offscreenIsReady = false;
-  offscreenReadyPromise = null;
-  offscreenReadyResolve = null;
-
-  await chrome.offscreen.createDocument({
-    url: "offscreen.html",
-    reasons: ["USER_MEDIA"],
-    justification: "Capture desktop frames during an active focus session",
+  // Create a background tab for capture
+  const tab = await chrome.tabs.create({
+    url: chrome.runtime.getURL("capture.html"),
+    active: false,
+    pinned: true,
   });
+  log("capture tab created", { id: tab.id });
 
-  await waitForOffscreenReady();
+  captureTabId = tab.id;
+
+  await waitForCaptureReady();
+  log("capture page ready");
 }
 
 async function startCaptureLoop() {
-  await ensureOffscreen();
+  log("startCaptureLoop() posting pickAndStart");
 
-  if (!desktopStreamId) throw new Error("Missing desktop streamId");
+  await ensureCapturePage();
+  if (!capturePort) throw new Error("Capture port not connected");
 
-  await chrome.runtime.sendMessage({
-    action: "offscreenStartCapture",
+  capturePort.postMessage({
+    action: "pickAndStart",
     payload: {
-      mode: "desktop",
-      streamId: desktopStreamId,
       intervalMs: 1000,
       maxWidth: 1280,
       maxHeight: 720,
@@ -89,43 +120,82 @@ async function startCaptureLoop() {
 
 async function stopCaptureLoop() {
   try {
-    await chrome.runtime.sendMessage({ action: "offscreenStopCapture" });
+    if (capturePort) capturePort.postMessage({ action: "stop" });
   } catch (_) {}
 }
 
-// -------------------- Messages --------------------
+// Listen for the capture page connecting
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "capturePage") return;
+
+  capturePort = port;
+  captureTabId = port.sender?.tab?.id ?? captureTabId;
+
+  port.onMessage.addListener((msg) => {
+    if (!msg?.action) return;
+    log("onConnect", { name: port.name, senderTabId: port.sender?.tab?.id });
+
+
+    if (msg.action === "ready") {
+      if (captureReadyResolve) captureReadyResolve();
+      return;
+    }
+
+    if (msg.action === "captureFrame") {
+      latestFrame = { ts: msg.ts, tabId: msg.tabId, dataUrl: msg.dataUrl };
+      pendingFrameForAnalysis = latestFrame;
+      maybeAnalyze();
+      return;
+    }
+
+    if (msg.action === "captureError") {
+      console.warn("Capture error:", msg.message);
+
+      const m = String(msg.message || "");
+
+      if (
+        m.includes("DevTools") ||
+        m.includes("Invalid state") ||
+        m.includes("AbortError")
+      ) {
+        endSession();
+        safeSendMessage({
+          action: "uiToast",
+          message:
+            "Screen capture failed. Please close DevTools (if open) and start again, then pick 'Entire screen'.",
+        });
+      }
+
+      return;
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    capturePort = null;
+  });
+});
+
+// If capture tab is closed, clear state
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === captureTabId) {
+    captureTabId = null;
+    capturePort = null;
+  }
+});
+
+// ----- Messages from popup / other extension pages -----
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Offscreen ready ping
-  if (request?.action === "offscreenReady") {
-    offscreenIsReady = true;
-    if (offscreenReadyResolve) offscreenReadyResolve();
-    sendResponse?.({ ok: true });
-    return; // sync
-  }
-
-  // Pre-warm offscreen so desktop streamId won't expire while creating it
-  if (request?.action === "prepareOffscreen") {
-    ensureOffscreen()
-      .then(() => sendResponse({ ok: true }))
-      .catch((e) => sendResponse({ ok: false, error: String(e) }));
-    return true; // keep channel open for async sendResponse
-  }
-
   if (request?.action === "startSession") {
-    // fire-and-forget start
     startSession(
       request.goal,
       request.duration,
       request.allowedHosts,
-      request.captureMode,
       request.streamId
     ).catch((e) => {
       console.warn("startSession failed:", e);
-      chrome.runtime.sendMessage({
-        action: "captureError",
-        message: `startSession failed: ${String(e)}`,
-      });
+      sendToPopupToast(`startSession failed: ${String(e)}`);
     });
+
     sendResponse?.({ ok: true });
     return; // sync
   }
@@ -133,85 +203,73 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action === "endSession") {
     endSession();
     sendResponse?.({ ok: true });
-    return; // sync
+    return;
   }
-
-  if (request?.action === "captureFrame") {
-    latestFrame = {
-      ts: request.ts,
-      tabId: request.tabId,
-      dataUrl: request.dataUrl,
-    };
-
-    pendingFrameForAnalysis = latestFrame;
-    maybeAnalyze(); // self-throttles
-
-    // Optional: noisy, but useful for debugging
-    // console.log("frame", latestFrame.ts);
-
-    sendResponse?.({ ok: true });
-    return; // sync
-  }
-
-  if (request?.action === "captureError") {
-    console.warn("Capture error:", request.message);
-
-    // If user accidentally selected a DevTools surface, stop session cleanly
-    if (String(request.message).includes("DevTools")) {
-      endSession();
-
-      // Tell popup UI (if open) to show a friendly hint
-      chrome.runtime.sendMessage({
-        action: "uiToast",
-        message: "Screen capture can't use DevTools windows. Please start again and pick 'Entire Screen'.",
-      });
-    }
-
-    sendResponse?.({ ok: true });
-    return; // sync
-  }
-
 
   if (request?.action === "getLatestFrame") {
     sendResponse({ ok: true, frame: latestFrame });
-    return true; // keep channel open (SW safety)
+    return true;
   }
+
+  if (request?.action === "getDebugState") {
+  sendResponse({ ok: true, state: getDebugState() });
+  return true;
+}
+
 });
 
-// -------------------- Session control --------------------
-async function startSession(goal, duration, allowed, mode, streamId) {
-  // If already active, stop any previous capture loop first (prevents races)
+function sendToPopupToast(message) {
+  try {
+    safeSendMessage({ action: "uiToast", message });
+  } catch (_) {}
+}
+
+// ----- Session control -----
+async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
+  // Stop any previous session capture first
   if (isSessionActive) {
-    try { await stopCaptureLoop(); } catch (_) {}
+    try {
+      await stopCaptureLoop();
+    } catch (_) {}
   }
+
+  log("startSession()", { goal, duration, allowedHostsCount: allowedHostsFromPopup?.length || 0 });
 
   isSessionActive = true;
   sessionGoal = goal || "";
-  allowedHosts = Array.isArray(allowed) ? allowed : [];
-  captureMode = mode || "desktop";
-  desktopStreamId = streamId || null;
+  allowedHosts = Array.isArray(allowedHostsFromPopup)
+    ? allowedHostsFromPopup
+    : [];
+  distractionCount = 0;
 
   chrome.alarms.clear("sessionEnd");
   if (typeof duration === "number" && duration > 0) {
     chrome.alarms.create("sessionEnd", { delayInMinutes: duration });
   }
 
-  // Start capture
   await startCaptureLoop();
 }
-
 
 function endSession() {
   isSessionActive = false;
   sessionGoal = "";
   allowedHosts = [];
   distractionCount = 0;
+  log("endSession()");
+
 
   chrome.alarms.clear("sessionEnd");
   stopCaptureLoop();
+
+  // Optional: close capture tab when session ends
+  if (captureTabId != null) {
+    chrome.tabs.remove(captureTabId).catch(() => {});
+  }
+  captureTabId = null;
+  capturePort = null;
 }
 
-// -------------------- Blocking on navigation --------------------
+// ----- Blocking on navigation -----
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (!isSessionActive || details.frameId !== 0) return;
 
@@ -222,20 +280,17 @@ chrome.webNavigation.onCommitted.addListener((details) => {
     return;
   }
 
-  // don't block chrome://, chrome-extension://, etc.
   if (url.protocol.startsWith("chrome")) return;
 
   function hostAllowed(hostname) {
     if (!hostname) return false;
-    if (!allowedHosts.length) return true; // if empty: allow everything
+    if (!allowedHosts.length) return true;
     return allowedHosts.some(
       (base) => hostname === base || hostname.endsWith("." + base)
     );
   }
 
-  const isAllowed = hostAllowed(url.hostname);
-
-  if (!isAllowed) {
+  if (!hostAllowed(url.hostname)) {
     distractionCount++;
 
     const blockedUrl =
@@ -250,8 +305,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "sessionEnd") endSession();
 });
 
-// -------------------- Analyze pipeline (no overlap, drop old frames) --------------------
-const ANALYZE_INTERVAL_MS = 8000; // tune: 8000–15000
+// ----- Analyze pipeline (same as before) -----
+const ANALYZE_INTERVAL_MS = 8000;
 const SERVER_URL = "http://localhost:3001/analyze";
 
 let inFlightAnalyze = false;
@@ -279,12 +334,11 @@ async function maybeAnalyze() {
   if (!pendingFrameForAnalysis) return;
 
   const frame = pendingFrameForAnalysis;
-  pendingFrameForAnalysis = null; // consume newest only
+  pendingFrameForAnalysis = null;
 
   inFlightAnalyze = true;
 
   try {
-    // Desktop capture: we analyze the current active tab’s URL/title
     const [tab] = await chrome.tabs
       .query({ active: true, currentWindow: true })
       .catch(() => []);
@@ -321,10 +375,8 @@ async function maybeAnalyze() {
         active: true,
         currentWindow: true,
       });
-
-      if (activeTab?.id != null) {
+      if (activeTab?.id != null)
         await chrome.tabs.update(activeTab.id, { url: blockedUrl });
-      }
     }
   } catch (e) {
     console.warn("analyze error:", e);
@@ -332,7 +384,6 @@ async function maybeAnalyze() {
     inFlightAnalyze = false;
     nextAnalyzeAllowedAt = Date.now() + ANALYZE_INTERVAL_MS;
 
-    // If newer frame arrived while analyzing, run again when allowed
     if (pendingFrameForAnalysis) maybeAnalyze();
   }
 }
