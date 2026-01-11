@@ -93,6 +93,11 @@ class FocusMonitor {
     this.headBaselineFrames = [];
     this.isCapturingHeadBaseline = false;
 
+    // Head delta calibration (captured when gaze calibration completes)
+    this.calibratedHeadDelta = null;
+    this.lastHeadMetrics = null;
+    this.lastHeadDelta = null;
+
     this.init();
   }
 
@@ -353,6 +358,13 @@ class FocusMonitor {
 
     // Compute head yaw metric from facial landmarks
     const headMetrics = this.computeHeadMetrics(positions);
+    this.lastHeadMetrics = headMetrics;
+    if (headMetrics && typeof headMetrics.asymmetry === 'number') {
+      const baseAsymNow = this.headBaseline?.asymmetry ?? 0;
+      this.lastHeadDelta = headMetrics.asymmetry - baseAsymNow;
+    } else {
+      this.lastHeadDelta = null;
+    }
 
     if (this.debugEnabled) {
       const sampleIdx = [0, 14, 33, 41, 47, 62];
@@ -402,12 +414,21 @@ class FocusMonitor {
 
     const head = this.classifyHeadDirection(headMetrics);
 
+    const baselineDeltaForDisplay = (typeof this.calibratedHeadDelta === 'number' && !isNaN(this.calibratedHeadDelta))
+      ? this.calibratedHeadDelta
+      : (head?.baselineDelta ?? null);
+
     // Build debug info for overlay (always show so user can see values)
     const debugOverlay = {
       asym: headMetrics?.asymmetry?.toFixed(3) ?? 'null',
       base: this.headBaseline?.asymmetry?.toFixed(3) ?? 'null',
       delta: head?.delta?.toFixed(3) ?? 'null',
+      bDelta: baselineDeltaForDisplay != null ? Number(baselineDeltaForDisplay).toFixed(3) : 'null',
+      dChg: head?.deltaChange != null ? Number(head.deltaChange).toFixed(3) : 'null',
       thr: String(head?.threshold ?? 'null'),
+      cal: this.isCalibrated ? 'Y' : 'N',
+      hasB: (typeof this.calibratedHeadDelta === 'number' && !isNaN(this.calibratedHeadDelta)) ? 'Y' : 'N',
+      fs: head?.facingScreen ? 'Y' : 'N',
       L: headMetrics?.leftDist ? Math.round(headMetrics.leftDist) : '?',
       R: headMetrics?.rightDist ? Math.round(headMetrics.rightDist) : '?'
     };
@@ -516,30 +537,61 @@ class FocusMonitor {
   }
 
   classifyHeadDirection(metrics) {
-    if (!metrics) return { facingScreen: true, direction: 'Centered' };
-    
-    const asym = metrics.asymmetry;
-    const baseAsym = this.headBaseline?.asymmetry ?? 0;
-    const delta = asym - baseAsym;
+    const threshold = 0.010;
+    const hasBaselineDelta = (typeof this.calibratedHeadDelta === 'number' && !isNaN(this.calibratedHeadDelta));
+    const baselineDelta = hasBaselineDelta ? this.calibratedHeadDelta : 0;
 
-    // HARDCODED based on user's actual values:
-    // base ~0.07, turned away asym ~0.08+, delta ~0.01+
-    // Trigger distraction if asym > 0.08 OR |delta| > 0.01
-    const absAsym = Math.abs(asym);
-    const absDelta = Math.abs(delta);
-    
-    if (absAsym > 0.08 || absDelta > 0.01) {
+    // If we can't compute metrics this frame, still return the baseline info for UI/debug.
+    if (!metrics) {
       return {
-        facingScreen: false,
-        direction: 'Not focused',
-        delta,
-        asym,
-        threshold: '0.08/0.01'
+        facingScreen: true,
+        direction: 'Centered',
+        delta: null,
+        asym: null,
+        threshold: `±${threshold.toFixed(3)}`,
+        baselineDelta,
+        deltaChange: null
       };
     }
 
-    // Otherwise, facing screen
-    return { facingScreen: true, direction: 'Centered', delta, asym, threshold: '0.08/0.01' };
+    const asym = metrics.asymmetry;
+    const baseAsym = this.headBaseline?.asymmetry ?? 0;
+    const delta = asym - baseAsym;
+    const deltaChange = delta - baselineDelta;
+
+    // Round to 3 decimals for display and comparison (matches HUD)
+    const deltaRounded = Math.round(delta * 1000) / 1000;
+    const baselineDeltaRounded = Math.round(baselineDelta * 1000) / 1000;
+    const deltaChangeRounded = deltaRounded - baselineDeltaRounded;
+
+    // Asymmetric thresholds: left turns (positive deltaChange) need lower threshold
+    const thresholdLeft = 0.001;  // more sensitive for left turns
+    const thresholdRight = 0.008; // keep right as-is
+    
+    // HARDCODED: check against asymmetric thresholds
+    const notFocused = (deltaChangeRounded >= thresholdLeft) || (deltaChangeRounded <= -thresholdRight);
+
+    if (notFocused) {
+      return {
+        facingScreen: false,
+        direction: 'Not focused',
+        delta: deltaRounded,
+        asym,
+        threshold: `L:${thresholdLeft}/R:${thresholdRight}`,
+        baselineDelta: baselineDeltaRounded,
+        deltaChange: deltaChangeRounded
+      };
+    }
+
+    return {
+      facingScreen: true,
+      direction: 'Centered',
+      delta: deltaRounded,
+      asym,
+      threshold: `L:${thresholdLeft}/R:${thresholdRight}`,
+      baselineDelta: baselineDeltaRounded,
+      deltaChange: deltaChangeRounded
+    };
   }
 
   drawHeadOverlay(text, color, debugInfo = null) {
@@ -875,8 +927,16 @@ class FocusMonitor {
     if (typeof webgazer !== 'undefined') {
       webgazer.removeMouseEventListeners();
     }
+
+    // Capture the current head delta as the calibration baseline.
+    // This lets us detect changes relative to the user's calibrated/neutral posture.
+    if (typeof this.lastHeadDelta === 'number' && !isNaN(this.lastHeadDelta)) {
+      this.calibratedHeadDelta = this.lastHeadDelta;
+    } else {
+      this.calibratedHeadDelta = 0;
+    }
     this.setStatus('Monitoring (calibrated)', 'active');
-    console.log('[FocusMonitor] Calibration samples:', this.calibrationSamples);
+    console.log('[FocusMonitor] Calibration samples:', this.calibrationSamples, 'calibratedHeadDelta:', this.calibratedHeadDelta);
   }
 
   showCalibrationOverlay(show) {
