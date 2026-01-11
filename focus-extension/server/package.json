@@ -1,0 +1,12 @@
+{
+  "name": "anchor-server",
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "openai": "^4.0.0"
+  },
+  "scripts": {
+    "dev": "node index.js"
+  }
+}
