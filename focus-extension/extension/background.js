@@ -3,8 +3,16 @@
 
 let isSessionActive = false;
 let sessionGoal = "";
-let allowedHosts = [];
-let distractionCount = 0;
+let blockedSites = []; // sites to block during session
+let distractionCount = 0; // Web blocked distractions
+let monitorAlertCount = 0; // Camera/Focus Monitor alerts
+let isOnBreak = false;
+let breakEndTime = null;
+
+// Metrics
+let sessionStartTime = 0;
+let lastDistractionTime = 0;
+let longestFocusStreakMs = 0;
 
 let latestFrame = null; // { ts, tabId, dataUrl }
 let pendingFrameForAnalysis = null;
@@ -17,8 +25,22 @@ let captureReadyResolve = null;
 let captureReadyPromise = null;
 
 const DEBUG = true;
-function log(...args) { if (DEBUG) console.log("[sw]", ...args); }
-function warn(...args) { console.warn("[sw]", ...args); }
+function log(...args) {
+  if (DEBUG) console.log("[sw]", ...args);
+}
+function warn(...args) {
+  console.warn("[sw]", ...args);
+}
+
+function updateStreak() {
+  if (!isSessionActive) return;
+  const now = Date.now();
+  const currentStreak = now - lastDistractionTime;
+  if (currentStreak > longestFocusStreakMs) {
+    longestFocusStreakMs = currentStreak;
+  }
+  lastDistractionTime = now;
+}
 
 // Catch “Uncaught (in promise)” so it shows with context
 self.addEventListener("unhandledrejection", (event) => {
@@ -73,8 +95,10 @@ function waitForCaptureReady(timeoutMs = 7000) {
 async function ensureCapturePage() {
   // If port exists, we're good
   if (capturePort) return;
-  log("ensureCapturePage() begin", { captureTabId, hasCapturePort: !!capturePort });
-
+  log("ensureCapturePage() begin", {
+    captureTabId,
+    hasCapturePort: !!capturePort,
+  });
 
   // If tab exists but port is missing, close it and recreate cleanly
   if (captureTabId != null) {
@@ -134,7 +158,6 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {
     if (!msg?.action) return;
     log("onConnect", { name: port.name, senderTabId: port.sender?.tab?.id });
-
 
     if (msg.action === "ready") {
       if (captureReadyResolve) captureReadyResolve();
@@ -206,16 +229,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return;
   }
 
+  if (request.action === "takeBreak") {
+    takeBreak();
+  } else if (request.action === "resumeSession") {
+    resumeSession();
+  } else if (request.type === "FOCUS_ALERT") {
+    monitorAlertCount++;
+    updateStreak();
+    // Show Chrome notification for focus alerts (works even when monitor tab not focused)
+    showFocusNotification(request.title, request.message);
+  }
+
   if (request?.action === "getLatestFrame") {
     sendResponse({ ok: true, frame: latestFrame });
     return true;
   }
 
   if (request?.action === "getDebugState") {
-  sendResponse({ ok: true, state: getDebugState() });
+    sendResponse({ ok: true, state: getDebugState() });
+    return true;
+  }
   return true;
-}
-
 });
 
 function sendToPopupToast(message) {
@@ -233,14 +267,21 @@ async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
     } catch (_) {}
   }
 
-  log("startSession()", { goal, duration, allowedHostsCount: allowedHostsFromPopup?.length || 0 });
+  log("startSession()", {
+    goal,
+    duration,
+    allowedHostsCount: allowedHostsFromPopup?.length || 0,
+  });
 
   isSessionActive = true;
   sessionGoal = goal || "";
-  allowedHosts = Array.isArray(allowedHostsFromPopup)
-    ? allowedHostsFromPopup
-    : [];
+  blockedSites = blocked || [];
   distractionCount = 0;
+
+  monitorAlertCount = 0;
+  sessionStartTime = Date.now();
+  lastDistractionTime = sessionStartTime;
+  longestFocusStreakMs = 0;
 
   chrome.alarms.clear("sessionEnd");
   if (typeof duration === "number" && duration > 0) {
@@ -251,14 +292,30 @@ async function startSession(goal, duration, allowedHostsFromPopup, streamId) {
 }
 
 function endSession() {
+  // Finalize streak calculation
+  if (isSessionActive) {
+    const now = Date.now();
+    const currentStreak = now - lastDistractionTime;
+    if (currentStreak > longestFocusStreakMs) {
+      longestFocusStreakMs = currentStreak;
+    }
+  }
+
+  const stats = {
+    distractionCount,
+    monitorAlertCount,
+    longestFocusStreakMs,
+  };
+
   isSessionActive = false;
   sessionGoal = "";
-  allowedHosts = [];
+  blockedSites = [];
   distractionCount = 0;
-  log("endSession()");
-
-
+  isOnBreak = false;
+  breakEndTime = null;
   chrome.alarms.clear("sessionEnd");
+  chrome.alarms.clear("breakEnd");
+
   stopCaptureLoop();
 
   // Optional: close capture tab when session ends
@@ -267,6 +324,57 @@ function endSession() {
   }
   captureTabId = null;
   capturePort = null;
+
+  // Close any open monitor tabs or windows (Full or Mini)
+  const monitorUrl = chrome.runtime.getURL("monitor.html");
+  const miniMonitorUrl = chrome.runtime.getURL("mini-monitor.html");
+
+  chrome.tabs.query({}, (tabs) => {
+    const tabsToClose = tabs.filter(
+      (t) => t.url === monitorUrl || t.url === miniMonitorUrl
+    );
+    if (tabsToClose.length > 0) {
+      chrome.tabs.remove(tabsToClose.map((t) => t.id));
+    }
+  });
+
+  return stats;
+}
+
+function takeBreak() {
+  isOnBreak = true;
+  breakEndTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+  chrome.alarms.create("breakEnd", { delayInMinutes: 5 });
+
+  // Store break state so popup can restore it
+  chrome.storage.local.set({ isOnBreak: true, breakEndTime });
+
+  // Notify popup to show break timer
+  chrome.runtime.sendMessage({ action: "takeBreak" }).catch(() => {});
+}
+
+function resumeSession() {
+  isOnBreak = false;
+  breakEndTime = null;
+  chrome.alarms.clear("breakEnd");
+
+  // Clear break state from storage
+  chrome.storage.local.set({ isOnBreak: false, breakEndTime: null });
+}
+
+function isHostBlocked(hostname, blockedList) {
+  if (!hostname || !blockedList.length) return false;
+  return blockedList.some((site) => {
+    const cleanSite = site
+      .toLowerCase()
+      .replace(/^(https?:\/\/)?(www\.)?/, "")
+      .split("/")[0];
+    return (
+      hostname.includes(cleanSite) ||
+      hostname === cleanSite ||
+      "www." + cleanSite === hostname
+    );
+  });
 }
 
 // ----- Blocking on navigation -----
@@ -282,27 +390,79 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 
   if (url.protocol.startsWith("chrome")) return;
 
-  function hostAllowed(hostname) {
-    if (!hostname) return false;
-    if (!allowedHosts.length) return true;
-    return allowedHosts.some(
-      (base) => hostname === base || hostname.endsWith("." + base)
-    );
-  }
+  // Skip blocking during break
+  if (isOnBreak) return;
 
-  if (!hostAllowed(url.hostname)) {
-    distractionCount++;
+  const isBlocked = isHostBlocked(url.hostname, blockedSites);
 
+  if (isBlocked) {
+    distractionCount++; // Web distraction
+    updateStreak(); // Reset streak
+
+    // IMPORTANT: Next export blocked page path
     const blockedUrl =
       chrome.runtime.getURL("blocked/index.html") +
-      `?goal=${encodeURIComponent(sessionGoal)}`;
+      `?goal=${encodeURIComponent(sessionGoal)}&url=${encodeURIComponent(
+        details.url
+      )}`;
 
     chrome.tabs.update(details.tabId, { url: blockedUrl });
   }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "sessionEnd") endSession();
+  if (alarm.name === "sessionEnd") {
+    endSession();
+  } else if (alarm.name === "breakEnd") {
+    resumeSession();
+    // notify popup to resume timer
+    chrome.runtime.sendMessage({ action: "breakEnded" }).catch(() => {});
+  }
+});
+
+// Focus notification with sound (works in background)
+let lastNotificationTime = 0;
+function showFocusNotification(title, message) {
+  const now = Date.now();
+  // Throttle: max one notification every 5 seconds
+  if (now - lastNotificationTime < 5000) return;
+  lastNotificationTime = now;
+
+  const notificationId = "focus-alert-" + now;
+  chrome.notifications.create(
+    notificationId,
+    {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: title || "Focus Alert!",
+      message: message || "You seem distracted. Get back on track!",
+      priority: 2,
+      requireInteraction: false,
+      silent: false, // This enables notification sound
+    },
+    () => {
+      // Auto-close after 4 seconds
+      setTimeout(() => {
+        chrome.notifications.clear(notificationId);
+      }, 4000);
+    }
+  );
+}
+
+// Click notification to focus the monitor tab
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith("focus-alert-")) {
+    // Find and focus the monitor tab
+    chrome.tabs.query(
+      { url: chrome.runtime.getURL("monitor.html") },
+      (tabs) => {
+        if (tabs.length > 0) {
+          chrome.tabs.update(tabs[0].id, { active: true });
+          chrome.windows.update(tabs[0].windowId, { focused: true });
+        }
+      }
+    );
+  }
 });
 
 // ----- Analyze pipeline (same as before) -----
