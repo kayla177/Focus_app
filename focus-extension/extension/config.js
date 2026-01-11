@@ -1,0 +1,4 @@
+window.CONFIG = {
+    ELEVENLABS_API_KEY: "d22dc7a6219609d3ab3fcd424a85017da239032fc1421a1279db6d438852191d",
+    VOICE_ID: "nPczCjzI2devNBz1zQrb" // Brian
+};

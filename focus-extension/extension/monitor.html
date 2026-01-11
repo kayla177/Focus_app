@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Monitor</title>
+  <link rel="stylesheet" href="monitor.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <div class="icon-circle">⚓</div>
+          <div>
+            <h1>Focus Monitor</h1>
+            <p class="subtitle">Real-time attention tracking</p>
+          </div>
+        </div>
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot"></span>
+          <span class="status-text">Ready</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Left Column -->
+      <div class="left-column">
+        <!-- Video Section -->
+        <div class="card video-card">
+          <div class="video-container" id="videoContainer">
+            <canvas id="overlay"></canvas>
+            <video id="pipVideo" autoplay playsinline muted style="width: 1px; height: 1px; opacity: 0; position: absolute; pointer-events: none;"></video>
+            <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+            <div class="face-box" id="faceBox"></div>
+            
+            <!-- Alert overlay -->
+            <div class="alert-overlay" id="alertOverlay">
+              <div class="alert-content">
+                <span class="alert-icon">👀</span>
+                <span class="alert-text">Look at your screen!</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="camera-controls">
+            <button id="startBtn" class="control-btn primary">
+              <span>📷</span> Start
+            </button>
+            <button id="stopBtn" class="control-btn danger" disabled>
+              <span>⏹</span> Stop
+            </button>
+            <button id="pipBtn" class="control-btn secondary" disabled>
+              <span>📺</span> Pop-out
+            </button>
+          </div>
+        </div>
+
+        <!-- Timeline Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📈</span>
+            <h3>Attention Timeline</h3>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div class="right-column">
+        <!-- Focus Score Card -->
+        <div class="card score-card">
+          <div class="score-ring">
+            <svg viewBox="0 0 100 100">
+              <circle class="score-bg" cx="50" cy="50" r="45"/>
+              <circle class="score-progress" id="scoreProgress" cx="50" cy="50" r="45"/>
+            </svg>
+            <div class="score-value">
+              <span id="focusScore">100</span>
+              <span class="score-label">%</span>
+            </div>
+          </div>
+          <div class="score-title">Focus Score</div>
+        </div>
+
+        <!-- Status Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📊</span>
+            <h3>Current Status</h3>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">Status</span>
+              <span class="stat-value" id="attentionStatus">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Head Position</span>
+              <span class="stat-value" id="headPosition">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Face Detected</span>
+              <span class="stat-value" id="faceDetected">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Confidence</span>
+              <span class="stat-value" id="confidence">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session Stats Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">⏱️</span>
+            <h3>Session Stats</h3>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">Session Time</span>
+              <span class="stat-value" id="sessionTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Focused</span>
+              <span class="stat-value focused" id="focusedTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Distracted</span>
+              <span class="stat-value distracted" id="distractedTime">0:00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Distractions</span>
+              <span class="stat-value" id="distractionCount">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">⚙️</span>
+            <h3>Settings</h3>
+          </div>
+          <div class="settings-list">
+            <div class="setting-item">
+              <label for="alertDelay">Alert Delay (seconds)</label>
+              <input type="number" id="alertDelay" value="3" min="1" max="30">
+            </div>
+            <div class="setting-item checkbox-item">
+              <label for="soundEnabled">
+                <input type="checkbox" id="soundEnabled" checked>
+                <span>Sound alerts</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label for="sensitivity">Sensitivity</label>
+              <select id="sensitivity">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="libs/webgazer.js"></script>
+  <script src="config.js"></script>
+  <script src="tts.js"></script>
+  <script src="monitor.js"></script>
+</body>
+</html>
