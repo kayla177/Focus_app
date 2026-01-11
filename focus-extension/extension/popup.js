@@ -72,7 +72,7 @@ function setupEventListeners() {
 			height: height,
 			left: left,
 			top: top,
-			focused: false
+			focused: false,
 		});
 	});
 
@@ -215,18 +215,78 @@ function pauseSession() {
 }
 
 function completeSession() {
-	clearInterval(timerInterval);
+	if (timerInterval) clearInterval(timerInterval);
 
 	chrome.storage.local.set({ isActive: false });
-	chrome.runtime.sendMessage({ action: "endSession" });
+	chrome.runtime.sendMessage({ action: "endSession" }, (stats) => {
+		// Stats come back from background.js
+		const alerts = stats?.monitorAlertCount || 0;
+		const longestStreakMs = stats?.longestFocusStreakMs || 0;
 
-	// Show summary
-	document.getElementById("summaryGoal").textContent = sessionGoal;
-	document.getElementById("deepWorkTime").textContent = `${
-		sessionDuration - 3
-	}m`;
+		// Format streak
+		const minutes = Math.floor(longestStreakMs / 60000);
+		const seconds = Math.floor((longestStreakMs % 60000) / 1000);
+		const streakText =
+			minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-	switchView("summary");
+		// Populate Summary
+		document.getElementById("summaryGoal").textContent = sessionGoal;
+
+		// Get focus score from facial monitor (real tracked time)
+		chrome.storage.local.get(
+			["facialFocusScore", "facialLongestStretchMs"],
+			(data) => {
+				// Use facial monitor score if available, otherwise calculate from alerts
+				let focusScore = data.facialFocusScore;
+				if (focusScore === undefined || focusScore === null) {
+					// Fallback: estimate based on alerts
+					const totalSessionMs = sessionDuration * 60 * 1000;
+					focusScore =
+						totalSessionMs > 0
+							? Math.round(
+									((totalSessionMs - alerts * 5000) /
+										totalSessionMs) *
+										100
+							  )
+							: 100;
+				}
+				const clampedScore = Math.max(
+					0,
+					Math.min(100, Math.round(focusScore))
+				);
+				document.getElementById(
+					"focusScore"
+				).textContent = `${clampedScore}%`;
+				const focusProgress = document.getElementById("focusProgress");
+				if (focusProgress)
+					focusProgress.style.width = `${clampedScore}%`;
+
+				// Longest Stretch - prefer facial monitor data if available
+				let finalStreakText = streakText;
+				if (
+					data.facialLongestStretchMs &&
+					data.facialLongestStretchMs > longestStreakMs
+				) {
+					const mins = Math.floor(
+						data.facialLongestStretchMs / 60000
+					);
+					const secs = Math.floor(
+						(data.facialLongestStretchMs % 60000) / 1000
+					);
+					finalStreakText =
+						mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+				}
+				document.getElementById("longestStretch").textContent =
+					finalStreakText;
+
+				// Distractions (Beeps)
+				document.getElementById("distractionCount").textContent =
+					alerts;
+
+				switchView("summary");
+			}
+		);
+	});
 }
 
 function startBreak() {

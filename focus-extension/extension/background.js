@@ -2,20 +2,39 @@
 let isSessionActive = false;
 let sessionGoal = "";
 let blockedSites = []; // sites to block during session
-let distractionCount = 0;
+let distractionCount = 0; // Web blocked distractions
+let monitorAlertCount = 0; // Camera/Focus Monitor alerts
 let isOnBreak = false;
 let breakEndTime = null;
+
+// Metrics
+let sessionStartTime = 0;
+let lastDistractionTime = 0;
+let longestFocusStreakMs = 0;
+
+function updateStreak() {
+	if (!isSessionActive) return;
+	const now = Date.now();
+	const currentStreak = now - lastDistractionTime;
+	if (currentStreak > longestFocusStreakMs) {
+		longestFocusStreakMs = currentStreak;
+	}
+	lastDistractionTime = now;
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	if (request.action === "startSession") {
 		startSession(request.goal, request.duration, request.blockedSites);
 	} else if (request.action === "endSession") {
-		endSession();
+		const stats = endSession();
+		sendResponse(stats);
 	} else if (request.action === "takeBreak") {
 		takeBreak();
 	} else if (request.action === "resumeSession") {
 		resumeSession();
 	} else if (request.type === "FOCUS_ALERT") {
+		monitorAlertCount++;
+		updateStreak();
 		// Show Chrome notification for focus alerts (works even when monitor tab not focused)
 		showFocusNotification(request.title, request.message);
 	}
@@ -27,11 +46,30 @@ function startSession(goal, duration, blocked) {
 	sessionGoal = goal || "";
 	blockedSites = blocked || [];
 	distractionCount = 0;
+	monitorAlertCount = 0;
+	sessionStartTime = Date.now();
+	lastDistractionTime = sessionStartTime;
+	longestFocusStreakMs = 0;
 
 	chrome.alarms.create("sessionEnd", { delayInMinutes: duration });
 }
 
 function endSession() {
+	// Finalize streak calculation
+	if (isSessionActive) {
+		const now = Date.now();
+		const currentStreak = now - lastDistractionTime;
+		if (currentStreak > longestFocusStreakMs) {
+			longestFocusStreakMs = currentStreak;
+		}
+	}
+
+	const stats = {
+		distractionCount,
+		monitorAlertCount,
+		longestFocusStreakMs
+	};
+
 	isSessionActive = false;
 	sessionGoal = "";
 	blockedSites = [];
@@ -39,6 +77,21 @@ function endSession() {
 	breakEndTime = null;
 	chrome.alarms.clear("sessionEnd");
 	chrome.alarms.clear("breakEnd");
+
+	// Close any open monitor tabs or windows (Full or Mini)
+	const monitorUrl = chrome.runtime.getURL("monitor.html");
+	const miniMonitorUrl = chrome.runtime.getURL("mini-monitor.html");
+
+	chrome.tabs.query({}, (tabs) => {
+		const tabsToClose = tabs.filter(
+			(t) => t.url === monitorUrl || t.url === miniMonitorUrl
+		);
+		if (tabsToClose.length > 0) {
+			chrome.tabs.remove(tabsToClose.map((t) => t.id));
+		}
+	});
+
+	return stats;
 }
 
 function takeBreak() {
@@ -96,7 +149,8 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 	const isBlocked = isHostBlocked(url.hostname, blockedSites);
 
 	if (isBlocked) {
-		distractionCount++;
+		distractionCount++; // Web distraction
+		updateStreak(); // Reset streak
 
 		// IMPORTANT: Next export blocked page path
 		const blockedUrl =
