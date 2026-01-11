@@ -1,7 +1,7 @@
 // ElevenLabs TTS Service
 // Voice: Brian - Deep, Resonant and Comforting
-const ELEVENLABS_API_KEY = "sk_93040629c9568aa6da96c4cf893facd8769488320837f56e";
-const VOICE_ID_BRIAN = "nPczCjz81K7QS1w1ZJ82";
+const ELEVENLABS_API_KEY = window.CONFIG?.ELEVENLABS_API_KEY || "";
+const VOICE_ID_BRIAN = window.CONFIG?.VOICE_ID || "nPczCjzI2devNBz1zQrb";
 
 const MOTIVATIONAL_QUOTES = [
   "Discipline is choosing between what you want now, and what you want most.",
@@ -55,7 +55,7 @@ class FocusVoiceService {
           },
           body: JSON.stringify({
             text: text,
-            model_id: "eleven_monolingual_v1",
+            model_id: "eleven_turbo_v2",
             voice_settings: {
               stability: 0.5,
               similarity_boost: 0.75
