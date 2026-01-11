@@ -4,8 +4,8 @@
   "version": "1.0.1",
   "description": "AI-powered focus companion that helps you stay anchored to your goals",
 
-  "permissions": ["storage", "alarms", "tabs", "webNavigation", "offscreen", "tabCapture", "activeTab"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": ["desktopCapture", "storage", "alarms", "tabs", "webNavigation", "offscreen", "tabCapture", "activeTab"],
+  "host_permissions": ["http://localhost:3001/*", "<all_urls>"],
 
   "background": {
     "service_worker": "background.js"
