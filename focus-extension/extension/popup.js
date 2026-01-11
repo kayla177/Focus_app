@@ -72,7 +72,7 @@ function setupEventListeners() {
 			height: height,
 			left: left,
 			top: top,
-			focused: false,
+			focused: true,
 		});
 	});
 
