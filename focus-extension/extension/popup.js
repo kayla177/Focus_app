@@ -215,18 +215,41 @@ function pauseSession() {
 }
 
 function completeSession() {
-	clearInterval(timerInterval);
+	if (timerInterval) clearInterval(timerInterval);
 
 	chrome.storage.local.set({ isActive: false });
-	chrome.runtime.sendMessage({ action: "endSession" });
+	chrome.runtime.sendMessage({ action: "endSession" }, (stats) => {
+		// Stats come back from background.js
+		const alerts = stats?.monitorAlertCount || 0;
+		const longestStreakMs = stats?.longestFocusStreakMs || 0;
+		
+		// Format streak
+		const minutes = Math.floor(longestStreakMs / 60000);
+		const seconds = Math.floor((longestStreakMs % 60000) / 1000);
+		const streakText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-	// Show summary
-	document.getElementById("summaryGoal").textContent = sessionGoal;
-	document.getElementById("deepWorkTime").textContent = `${
-		sessionDuration - 3
-	}m`;
+		// Populate Summary
+		document.getElementById("summaryGoal").textContent = sessionGoal;
+		
+		// Use "Focus Score" slot for Longest Streak for now
+		const focusScoreVal = document.getElementById("focusScore");
+		const focusScoreLabel =
+			focusScoreVal.parentElement.querySelector(".stat-label");
+		if (focusScoreLabel) focusScoreLabel.textContent = "Longest Streak";
+		focusScoreVal.textContent = streakText;
+		
+		// Update Progress Bar to always be full or proportional? Make it full 'success'
+		const focusProgress = document.getElementById("focusProgress");
+		if (focusProgress) focusProgress.style.width = "100%";
 
-	switchView("summary");
+		// Deep Work (Total Duration)
+		document.getElementById("deepWorkTime").textContent = `${sessionDuration}m`;
+
+		// Distractions (Beeps)
+		document.getElementById("distractionCount").textContent = alerts;
+
+		switchView("summary");
+	});
 }
 
 function startBreak() {
