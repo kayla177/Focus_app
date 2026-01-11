@@ -4,8 +4,10 @@
 
 class MiniMonitor {
   constructor() {
-    this.statusDot = document.getElementById('statusDot');
-    this.statusLabel = document.getElementById('statusLabel');
+    this.iconCircle = document.getElementById('iconCircle');
+    this.statusIndicator = document.getElementById('statusIndicator');
+    this.subtitle = document.getElementById('subtitle');
+    this.statusText = document.getElementById('statusText');
     this.canvas = document.getElementById('trackingCanvas');
     this.ctx = this.canvas.getContext('2d');
     this.closeBtn = document.getElementById('closeBtn');
@@ -79,8 +81,41 @@ class MiniMonitor {
   }
   
   setStatus(state, label) {
-    this.statusDot.className = 'status-dot ' + state;
-    this.statusLabel.textContent = label;
+    // Update icon circle
+    this.iconCircle.className = 'icon-circle';
+    if (state === 'distracted' || state === 'away') {
+      this.iconCircle.classList.add(state);
+    }
+    
+    // Update status indicator
+    this.statusIndicator.className = 'status-indicator';
+    if (state === 'distracted' || state === 'away') {
+      this.statusIndicator.classList.add(state);
+    }
+    
+    // Update status text
+    this.statusText.className = 'status-text';
+    if (state === 'distracted' || state === 'away') {
+      this.statusText.classList.add(state);
+    }
+    
+    // Update text content
+    const statusLabels = {
+      'focused': '● Focused',
+      'distracted': '● Distracted',
+      'away': '● Away',
+      'loading': '● Starting...'
+    };
+    this.statusText.textContent = statusLabels[state] || '● ' + label;
+    
+    // Update subtitle
+    const subtitles = {
+      'focused': 'Session active',
+      'distracted': 'Eyes off screen detected',
+      'away': 'Face not detected',
+      'loading': 'Initializing tracking...'
+    };
+    this.subtitle.textContent = subtitles[state] || label;
   }
   
   async startTracking() {

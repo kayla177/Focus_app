@@ -14,9 +14,6 @@ class FocusMonitor {
     this.faceBox = document.getElementById('faceBox');
     this.alertOverlay = document.getElementById('alertOverlay');
     this.statusBadge = document.getElementById('statusBadge');
-    this.calibrationOverlay = document.getElementById('calibrationOverlay');
-    this.calibrationGrid = document.getElementById('calibrationGrid');
-    this.calibrationInstructions = document.getElementById('calibrationInstructions');
 
     // Stat elements
     this.focusScoreEl = document.getElementById('focusScore');
@@ -34,7 +31,6 @@ class FocusMonitor {
     // Buttons
     this.startBtn = document.getElementById('startBtn');
     this.stopBtn = document.getElementById('stopBtn');
-    this.calibrateBtn = document.getElementById('calibrateBtn');
     this.pipBtn = document.getElementById('pipBtn');
 
     // WebGazer
@@ -68,13 +64,6 @@ class FocusMonitor {
     this.distractedSince = null;
     this.isAlertShowing = false;
 
-    // Calibration
-    this.isCalibrating = false;
-    this.isCalibrated = false;
-    this.calibrationPoints = [];
-    this.calibrationIndex = 0;
-    this.calibrationSamples = 0;
-
     // Timeline data
     this.timelineData = [];
     this.lastTimelineUpdate = Date.now();
@@ -93,8 +82,6 @@ class FocusMonitor {
     this.headBaselineFrames = [];
     this.isCapturingHeadBaseline = false;
 
-    // Head delta calibration (captured when gaze calibration completes)
-    this.calibratedHeadDelta = null;
     this.lastHeadMetrics = null;
     this.lastHeadDelta = null;
 
@@ -113,7 +100,6 @@ class FocusMonitor {
     // Event listeners
     this.startBtn.addEventListener('click', () => this.start());
     this.stopBtn.addEventListener('click', () => this.stop());
-    this.calibrateBtn?.addEventListener('click', () => this.startCalibration());
 
     // Minimize/Expand handlers
     this.minimizeBtn?.addEventListener('click', () => this.toggleMinimize());
@@ -212,12 +198,10 @@ class FocusMonitor {
       this.currentState = 'focused';
       this.timelineData = [];
       this.gazeHistory = [];
-      this.isCalibrated = false;
 
       this.isRunning = true;
       this.startBtn.disabled = true;
       this.stopBtn.disabled = false;
-      this.calibrateBtn.disabled = false;
       if (this.pipBtn) this.pipBtn.disabled = false;
       if (this.minimizeBtn) this.minimizeBtn.disabled = false;
 
@@ -860,7 +844,7 @@ class FocusMonitor {
         }
       });
       webgazer.showFaceFeedbackBox(false);
-      webgazer.showPredictionPoints(true); // Keep gaze dot visible
+      webgazer.showPredictionPoints(false); // Hide gaze dot
       // Disable mouse-based learning - we only want eye tracking
       webgazer.removeMouseEventListeners();
       webgazer.begin()
@@ -908,100 +892,6 @@ class FocusMonitor {
     }
   }
 
-  startCalibration() {
-    if (!this.isRunning || !this.wgReady) {
-      this.setStatus('Start monitoring first', 'warning');
-      return;
-    }
-    // Re-enable mouse for calibration clicks
-    if (typeof webgazer !== 'undefined') {
-      webgazer.addMouseEventListeners();
-    }
-    this.isCalibrating = true;
-    this.isCalibrated = false;
-    this.calibrationSamples = 0;
-    this.calibrationIndex = 0;
-    this.buildCalibrationPoints();
-    this.showCalibrationOverlay(true);
-    this.activateCalibrationPoint(0);
-    this.setStatus('Calibrating...', 'warning');
-  }
-
-  buildCalibrationPoints() {
-    this.calibrationPoints = [];
-    if (!this.calibrationGrid) return;
-    this.calibrationGrid.innerHTML = '';
-    const positions = [
-      [10, 10], [50, 10], [90, 10],
-      [10, 50], [50, 50], [90, 50],
-      [10, 90], [50, 90], [90, 90]
-    ];
-    positions.forEach(([x, y], idx) => {
-      const dot = document.createElement('div');
-      dot.className = 'calibration-point';
-      dot.style.left = `${x}%`;
-      dot.style.top = `${y}%`;
-      dot.addEventListener('click', () => this.handleCalibrationClick(idx));
-      this.calibrationGrid.appendChild(dot);
-      this.calibrationPoints.push(dot);
-    });
-  }
-
-  handleCalibrationClick(idx) {
-    if (!this.isCalibrating) return;
-    if (idx !== this.calibrationIndex) return;
-    const dot = this.calibrationPoints[idx];
-    const rect = dot.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    // Record gaze sample tied to this point
-    try {
-      webgazer.recordScreenPosition(x, y, 'click');
-    } catch (e) {
-      console.warn('Calibration record failed', e);
-    }
-    this.calibrationSamples++;
-    dot.classList.remove('active');
-    dot.style.opacity = 0.4;
-    this.calibrationIndex++;
-    if (this.calibrationIndex >= this.calibrationPoints.length) {
-      this.finishCalibration();
-    } else {
-      this.activateCalibrationPoint(this.calibrationIndex);
-    }
-  }
-
-  activateCalibrationPoint(idx) {
-    this.calibrationPoints.forEach((p, i) => {
-      p.classList.toggle('active', i === idx);
-      p.style.opacity = i === idx ? 1 : 0.6;
-    });
-  }
-
-  finishCalibration() {
-    this.isCalibrating = false;
-    this.isCalibrated = true;
-    this.showCalibrationOverlay(false);
-    // Disable mouse learning again after calibration
-    if (typeof webgazer !== 'undefined') {
-      webgazer.removeMouseEventListeners();
-    }
-
-    // Capture the current head delta as the calibration baseline.
-    // This lets us detect changes relative to the user's calibrated/neutral posture.
-    if (typeof this.lastHeadDelta === 'number' && !isNaN(this.lastHeadDelta)) {
-      this.calibratedHeadDelta = this.lastHeadDelta;
-    } else {
-      this.calibratedHeadDelta = 0;
-    }
-    this.setStatus('Monitoring (calibrated)', 'active');
-    console.log('[FocusMonitor] Calibration samples:', this.calibrationSamples, 'calibratedHeadDelta:', this.calibratedHeadDelta);
-  }
-
-  showCalibrationOverlay(show) {
-    if (!this.calibrationOverlay) return;
-    this.calibrationOverlay.style.display = show ? 'flex' : 'none';
-  }
 }
 
 // Initialize when DOM ready

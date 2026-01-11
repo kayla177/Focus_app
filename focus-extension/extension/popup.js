@@ -61,8 +61,8 @@ function setupEventListeners() {
 
 	// Mini Monitor button - opens small popup window
 	document.getElementById("miniMonitorBtn")?.addEventListener("click", () => {
-		const width = 140;
-		const height = 100;
+		const width = 280;
+		const height = 150;
 		const left = screen.width - width - 20;
 		const top = 80;
 		chrome.windows.create({
