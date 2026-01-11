@@ -778,6 +778,16 @@ class FocusMonitor {
       this.scoreProgress.style.strokeDasharray = circumference;
       this.scoreProgress.style.strokeDashoffset = offset;
     }
+    
+    // Save to storage for popup summary
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({
+        facialFocusScore: score,
+        facialFocusedMs: this.focusedMs,
+        facialDistractedMs: this.distractedMs,
+        facialDistractionCount: this.distractionCount
+      });
+    }
   }
   
   renderTimeline() {
