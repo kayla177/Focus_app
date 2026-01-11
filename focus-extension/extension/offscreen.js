@@ -3,7 +3,6 @@ let videoEl = null;
 let canvasEl = null;
 let ctx = null;
 let tickTimer = null;
-
 // Tell background we're ready to receive messages
 chrome.runtime.sendMessage({ action: "offscreenReady" });
 

@@ -58,8 +58,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	return true;
 });
 
-// background.js
-
 async function startCaptureLoop() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab) return console.error("No active tab");
